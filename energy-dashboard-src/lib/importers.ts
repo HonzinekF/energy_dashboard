@@ -38,8 +38,8 @@ export async function importSolaxBuffer(buffer: Buffer, fileName: string): Promi
         row.some((cell) => cell !== null && cell !== undefined && String(cell).trim() !== ""),
     );
 
-  const rawRows: SolaxRow[] = dataRows
-    .map((row) => {
+  const rawRows = dataRows
+    .map<SolaxRow | null>((row) => {
       const record = headers.reduce<Record<string, unknown>>((acc, header, idx) => {
         acc[header] = row[idx];
         return acc;
@@ -49,7 +49,7 @@ export async function importSolaxBuffer(buffer: Buffer, fileName: string): Promi
       if (!timestamp) {
         return null;
       }
-      const gridPower = toNumber(record["Grid power (W)"]);
+      const gridPower = toNumber(record["Grid power (W)"]) ?? 0;
       return {
         timestamp,
         pvOutput: toNumber(record["Total PV Power (W)"]),
@@ -57,9 +57,9 @@ export async function importSolaxBuffer(buffer: Buffer, fileName: string): Promi
         batteryPower: toNumber(record["Total battery power (W)"]),
         gridFeedIn: gridPower > 0 ? gridPower : 0,
         gridImport: gridPower < 0 ? Math.abs(gridPower) : 0,
-      };
+      } satisfies SolaxRow;
     })
-    .filter((row): row is SolaxRow => Boolean(row));
+    .filter((row): row is SolaxRow => row !== null);
 
   const intervalMinutes = detectIntervalMinutes(rawRows);
   const normalized = bucketizeSolaxRows(rawRows, intervalMinutes);
@@ -77,8 +77,8 @@ export async function importTigoCsv(filePath: string): Promise<ImportSummary> {
     skip_empty_lines: true,
     trim: true,
   });
-  const rawRows: TigoRow[] = records
-    .map((record) => {
+  const rawRows = records
+    .map<TigoRow | null>((record) => {
       const timestamp = normalizeTimestamp(record["Datetime"]);
       if (!timestamp) {
         return null;
@@ -99,9 +99,9 @@ export async function importTigoCsv(filePath: string): Promise<ImportSummary> {
         stringC: buckets.C || undefined,
         stringD: buckets.D || undefined,
         total,
-      };
+      } satisfies TigoRow;
     })
-    .filter((row): row is TigoRow => Boolean(row));
+    .filter((row): row is TigoRow => row !== null);
 
   const intervalMinutes = 15;
   const normalized = bucketizeTigoRows(rawRows, intervalMinutes);

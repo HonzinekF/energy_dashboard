@@ -4,7 +4,7 @@ import path from "path";
 
 const DB_PATH = process.env.ENERGY_DB_PATH ?? path.join(process.cwd(), "data", "energy.db");
 
-let cached: Database.Database | null = null;
+let cached: any | null = null;
 
 export function getDb() {
   if (cached) return cached;

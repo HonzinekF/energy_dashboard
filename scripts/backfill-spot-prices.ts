@@ -1,8 +1,8 @@
 #!/usr/bin/env ts-node
 import { hideBin } from "yargs/helpers";
 import yargs from "yargs";
-import { fetchSpotPrices } from "../lib/spotPriceClient.ts";
-import { saveSpotPrices } from "../lib/spotPriceStore.ts";
+import { fetchSpotPrices } from "../lib/spotPriceClient";
+import { saveSpotPrices } from "../lib/spotPriceStore";
 
 type Args = {
   from: string;

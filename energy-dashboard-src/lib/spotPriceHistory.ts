@@ -1,6 +1,7 @@
 import { loadSpotPrices } from "./spotPriceStore";
 import type { DashboardRange } from "./dashboardFilters";
 import { listSpotPriceStats } from "./spotPriceDb";
+import type { SpotPricePayload } from "./spotPriceClient";
 
 export type SpotHistoryPoint = {
   date: string;
@@ -24,15 +25,15 @@ export async function fetchSpotPricesHistory(limit = 14, range: DashboardRange =
   }
 
   const data = await loadSpotPrices();
-  const fallback = data
+  const fallback: SpotHistoryPoint[] = data
     .slice(0, limit)
-    .map((payload) => ({
+    .map((payload: SpotPricePayload): SpotHistoryPoint => ({
       date: payload.date,
       min: payload.hourly.reduce((prev, current) => Math.min(prev, current.priceCZK), Infinity),
       max: payload.hourly.reduce((prev, current) => Math.max(prev, current.priceCZK), -Infinity),
       average: payload.hourly.reduce((sum, current) => sum + current.priceCZK, 0) / payload.hourly.length,
     }))
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    .sort((a: SpotHistoryPoint, b: SpotHistoryPoint) => new Date(a.date).getTime() - new Date(b.date).getTime());
   return sliceByRange(fallback, range);
 }
 

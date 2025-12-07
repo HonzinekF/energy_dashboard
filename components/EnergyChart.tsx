@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -80,11 +80,16 @@ type SeriesKey = (typeof SERIES)[number]["key"];
 export function EnergyChart({ data }: { data: Point[] }) {
   const chartId = useId();
   const [visibleSeries, setVisibleSeries] = useState<SeriesKey[]>(() => SERIES.map((series) => series.key));
+  const [fullscreen, setFullscreen] = useState(false);
   const cleanedData = useMemo(() => sanitizeData(data), [data]);
   const chartData = useMemo(() => cleanedData.map((point) => ({ ...point, ts: Date.parse(point.datetime) })), [cleanedData]);
   const seriesMap = useMemo(
     () => SERIES.reduce<Record<string, (typeof SERIES)[number]>>((acc, series) => ({ ...acc, [series.key]: series }), {}),
     [],
+  );
+  const renderTooltip = useCallback(
+    (props: TooltipProps<number, string>) => <CustomTooltip {...props} seriesMap={seriesMap} />,
+    [seriesMap],
   );
 
   function toggleSeries(key: SeriesKey) {
@@ -137,6 +142,13 @@ export function EnergyChart({ data }: { data: Point[] }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFullscreen(true)}
+              className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
+            >
+              Celá obrazovka
+            </button>
             {SERIES.map((series) => {
               const isActive = visibleSeries.includes(series.key);
               return (
@@ -186,7 +198,7 @@ export function EnergyChart({ data }: { data: Point[] }) {
                 stroke="#94a3b8"
                 label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
               />
-              <Tooltip content={(props) => <CustomTooltip {...props} seriesMap={seriesMap} />} />
+              <Tooltip content={renderTooltip} />
               {activeSeries.map((series) => (
                 <Area
                   key={series.key}
@@ -212,11 +224,85 @@ export function EnergyChart({ data }: { data: Point[] }) {
         </div>
       </div>
 
+      {fullscreen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm">
+          <div className="absolute inset-4 flex flex-col rounded-2xl bg-white shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-slate-700">Energetický tok (celá obrazovka)</p>
+                <p className="text-xs text-slate-500">Stiskněte Esc nebo Zavřít pro návrat</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setFullscreen(false)}
+                className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Zavřít
+              </button>
+            </div>
+            <div className="flex-1 min-h-[20rem] p-4" style={{ minWidth: 0 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart data={chartData} margin={{ left: 24, right: 24, bottom: 24 }}>
+                  <defs>
+                    {SERIES.map((series) => (
+                      <linearGradient key={series.key} id={`${chartId}-full-${series.key}`} x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor={series.gradientFrom} stopOpacity={0.6} />
+                        <stop offset="95%" stopColor={series.gradientTo} stopOpacity={0.1} />
+                      </linearGradient>
+                    ))}
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                  <XAxis
+                    dataKey="ts"
+                    type="number"
+                    domain={["dataMin", "dataMax"]}
+                    scale="time"
+                    allowDuplicatedCategory={false}
+                    tickFormatter={(value) => formatShortDate(new Date(value as number).toISOString())}
+                    minTickGap={32}
+                    stroke="#94a3b8"
+                  />
+                  <YAxis
+                    tickFormatter={(value) => value.toLocaleString("cs-CZ")}
+                    width={80}
+                    stroke="#94a3b8"
+                    label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
+                  />
+                  <Tooltip content={renderTooltip} />
+                  {activeSeries.map((series) => (
+                    <Area
+                      key={series.key}
+                      type="monotone"
+                      dataKey={series.key}
+                      name={series.label}
+                      stroke={series.stroke}
+                      fill={`url(#${chartId}-full-${series.key})`}
+                      strokeWidth={2}
+                      isAnimationActive={false}
+                    />
+                  ))}
+                  <Brush
+                    dataKey="ts"
+                    travellerWidth={12}
+                    height={36}
+                    stroke="#94a3b8"
+                    fill="#f8fafc"
+                    className="[&_.recharts-brush]:rounded-xl"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
 
-type CustomTooltipProps = TooltipProps<number, string> & {
+type CustomTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string | number; value?: number | string }>;
+  label?: number | string;
   seriesMap: Record<string, (typeof SERIES)[number]>;
 };
 

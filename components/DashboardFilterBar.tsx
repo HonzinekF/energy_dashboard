@@ -66,7 +66,7 @@ export function DashboardFilterBar({ filters }: { filters: DashboardFilterState 
 type FilterSelectProps = {
   label: string;
   value: string;
-  options: Array<{ value: string; label: string }>;
+  options: ReadonlyArray<{ value: string; label: string }>;
   onChange: (value: string) => void;
 };
 
@@ -89,6 +89,6 @@ function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
   );
 }
 
-function labelForValue(value: string, options: Array<{ value: string; label: string }>) {
+function labelForValue(value: string, options: ReadonlyArray<{ value: string; label: string }>) {
   return options.find((option) => option.value === value)?.label ?? value;
 }

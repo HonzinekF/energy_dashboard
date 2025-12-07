@@ -72,6 +72,7 @@ function getRangeStart(range: DashboardFilterState["range"]) {
 
 type EnergySeriesPoint = {
   datetime: string;
+  bucket?: string;
   batteryCharge?: number;
   batteryDischarge?: number;
   tigoProduction?: number;
@@ -124,8 +125,18 @@ export function loadEnergySeries(filters: DashboardFilterState): EnergySeriesPoi
     map.set(row.datetime, { ...current, ...row });
   };
 
-  solaxRows.forEach((row) => upsert({ ...row, datetime: row.bucket }));
-  tigoRows.forEach((row) => upsert({ ...row, datetime: row.bucket }));
+  solaxRows.forEach((row) => {
+    const datetime = row.bucket ?? row.datetime;
+    if (datetime) {
+      upsert({ ...row, datetime });
+    }
+  });
+  tigoRows.forEach((row) => {
+    const datetime = row.bucket ?? row.datetime;
+    if (datetime) {
+      upsert({ ...row, datetime });
+    }
+  });
 
   return Array.from(map.values()).sort((a, b) => a.datetime.localeCompare(b.datetime));
 }

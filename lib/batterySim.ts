@@ -12,6 +12,7 @@ export type Scenario = {
 
 type BatterySimOptions = {
   pricePerKwh?: number;
+  capacityKwh?: number;
 };
 
 const MAX_CAPACITY = 20;
@@ -24,9 +25,10 @@ export async function runBatteryScenarios(filters: DashboardFilterState, options
   if (!samples.length) return [];
 
   const pricePerKwh = options.pricePerKwh ?? PRICE_DEFAULT;
+  const maxCapacity = Math.max(0, Math.min(options.capacityKwh ?? MAX_CAPACITY, MAX_CAPACITY));
   const scenarios: Scenario[] = [];
 
-  for (let cap = 0; cap <= MAX_CAPACITY; cap += 1) {
+  for (let cap = 0; cap <= maxCapacity; cap += 1) {
     const { self, savings, importReduction, throughput } = simulate(samples, cap);
     const paybackYears = savings > 0 ? (cap * pricePerKwh) / savings : null;
     scenarios.push({

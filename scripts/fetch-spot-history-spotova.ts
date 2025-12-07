@@ -28,7 +28,7 @@ const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");
 ensureSchema(db);
 
-function ensureSchema(database: Database.Database) {
+function ensureSchema(database: any) {
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });

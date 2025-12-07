@@ -36,7 +36,7 @@ async function fetchDay(date: string): Promise<HourEntry[]> {
   return data.hours as HourEntry[];
 }
 
-function ensureSchema(database: Database.Database) {
+function ensureSchema(database: any) {
   const dir = path.dirname(DB_PATH);
   if (!fs.existsSync(dir)) {
     fs.mkdirSync(dir, { recursive: true });

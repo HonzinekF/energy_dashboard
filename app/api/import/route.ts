@@ -66,13 +66,13 @@ function parseCsvFile(buffer: Buffer, systemId?: string): MeasurementRow[] {
 function parseXlsFile(buffer: Buffer, systemId?: string): MeasurementRow[] {
   const workbook = XLSX.read(buffer, { cellDates: false, type: "buffer" });
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, string>>(sheet, { header: 1 });
+  const rows = XLSX.utils.sheet_to_json<(string | number | null)[]>(sheet, { header: 1 });
   const headerRow = rows[0];
   if (!Array.isArray(headerRow)) {
     throw new Error("Chybí hlavička v XLS/XLSX");
   }
   const headers = headerRow.map((cell, idx) => (cell ? String(cell).trim() : `col_${idx}`));
-  const dataRows = rows.slice(1) as Array<(string | number | null)[]>;
+  const dataRows = rows.slice(1);
   return dataRows
     .map((cells) => {
       const record: Record<string, string> = {};

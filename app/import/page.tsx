@@ -37,7 +37,6 @@ export default async function ImportPage({ searchParams }: ImportPageProps) {
         dashboardSource={data.sourceUsed}
         dashboardUpdatedAt={data.refreshedAt}
         spotPayload={null}
-        spotUpdatedAt={null}
       />
 
       <ImportPreview />

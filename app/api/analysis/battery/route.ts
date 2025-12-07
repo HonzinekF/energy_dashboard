@@ -6,12 +6,13 @@ export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   const url = new URL(request.url);
+  const getParam = (key: string) => url.searchParams.get(key) ?? undefined;
   const filters: DashboardFilterState = {
-    range: normalizeRange(url.searchParams.get("range")),
-    source: normalizeSource(url.searchParams.get("source")),
-    interval: normalizeInterval(url.searchParams.get("interval")),
+    range: normalizeRange(getParam("range")),
+    source: normalizeSource(getParam("source")),
+    interval: normalizeInterval(getParam("interval")),
   };
-  const pricePerKwh = parseNumber(url.searchParams.get("pricePerKwh"));
+const pricePerKwh = parseNumber(getParam("pricePerKwh"));
 
   const scenarios = await runBatteryScenarios(filters, { pricePerKwh });
   if (!scenarios.length) {
@@ -35,7 +36,7 @@ export async function GET(request: Request) {
   });
 }
 
-function parseNumber(value: string | null) {
+function parseNumber(value: string | undefined) {
   if (!value) return undefined;
   const num = Number(value);
   return Number.isFinite(num) ? num : undefined;

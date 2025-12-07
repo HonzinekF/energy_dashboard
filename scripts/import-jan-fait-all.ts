@@ -72,7 +72,7 @@ function main() {
       const imp = num(rec["Dokup elektřiny z ČEZ (kWh)"]);
       const charge = num(rec["Nabití baterie (kWh)"]);
       const discharge = num(rec["Vybití baterie (kWh)"]);
-      const batteryPower = toNull(discharge - charge);
+      const batteryPower = discharge === null || charge === null ? null : toNull(discharge - charge);
 
       solaxRows.push({
         timestamp: ts15,
@@ -164,8 +164,8 @@ function num(value: unknown): number | null {
   return Number.isFinite(n) ? n : null;
 }
 
-function toNull(value: number): number | null {
-  return Number.isFinite(value) ? value : null;
+function toNull(value: number | null | undefined): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function toIso(value: unknown): string | null {
@@ -177,7 +177,7 @@ function toIso(value: unknown): string | null {
   return date.toISOString();
 }
 
-function runMigrations(db: Database.Database) {
+function runMigrations(db: any) {
   const version = db.pragma("user_version", { simple: true }) as number;
 
   if (version < 1) {

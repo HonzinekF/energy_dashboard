@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { loadDashboardData } from "@/lib/pythonClient";
 import { isAuthenticated } from "@/lib/auth";
-import { normalizeRange, normalizeSource } from "@/lib/dashboardFilters";
+import { normalizeInterval, normalizeRange, normalizeSource, type DashboardFilterState } from "@/lib/dashboardFilters";
 
 export async function GET(request: Request) {
   if (!(await isAuthenticated())) {
@@ -9,9 +9,10 @@ export async function GET(request: Request) {
   }
 
   const url = new URL(request.url);
-  const filters = {
+  const filters: DashboardFilterState = {
     range: normalizeRange(url.searchParams.get("range") ?? undefined),
     source: normalizeSource(url.searchParams.get("source") ?? undefined),
+    interval: normalizeInterval(url.searchParams.get("interval") ?? undefined),
   };
 
   const payload = await loadDashboardData(filters);

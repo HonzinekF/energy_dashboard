@@ -9,13 +9,13 @@ export async function saveSpotPrices(payload: SpotPricePayload) {
   const dir = path.dirname(STORE_PATH);
   await mkdir(dir, { recursive: true });
   const existing = await loadSpotPrices();
-  const filtered = existing.filter((entry) => entry.date !== payload.date);
+  const filtered = existing.filter((entry: SpotPricePayload) => entry.date !== payload.date);
   const updated = [payload, ...filtered].slice(0, 30);
   await writeFile(STORE_PATH, JSON.stringify(updated, null, 2), "utf-8");
   storeSpotPricePayload(payload);
 }
 
-export async function loadSpotPrices() {
+export async function loadSpotPrices(): Promise<SpotPricePayload[]> {
   const dbData = listSpotPriceHistory(30);
   if (dbData.length) {
     return dbData;

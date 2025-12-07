@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -86,6 +86,10 @@ export function EnergyChart({ data }: { data: Point[] }) {
   const seriesMap = useMemo(
     () => SERIES.reduce<Record<string, (typeof SERIES)[number]>>((acc, series) => ({ ...acc, [series.key]: series }), {}),
     [],
+  );
+  const renderTooltip = useCallback(
+    (props: TooltipProps<number, string>) => <CustomTooltip {...props} seriesMap={seriesMap} />,
+    [seriesMap],
   );
 
   function toggleSeries(key: SeriesKey) {
@@ -194,7 +198,7 @@ export function EnergyChart({ data }: { data: Point[] }) {
                 stroke="#94a3b8"
                 label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
               />
-              <Tooltip content={(props) => <CustomTooltip {...props} seriesMap={seriesMap} />} />
+              <Tooltip content={renderTooltip} />
               {activeSeries.map((series) => (
                 <Area
                   key={series.key}
@@ -264,7 +268,7 @@ export function EnergyChart({ data }: { data: Point[] }) {
                     stroke="#94a3b8"
                     label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
                   />
-                  <Tooltip content={(props) => <CustomTooltip {...props} seriesMap={seriesMap} />} />
+                  <Tooltip content={renderTooltip} />
                   {activeSeries.map((series) => (
                     <Area
                       key={series.key}
@@ -295,7 +299,10 @@ export function EnergyChart({ data }: { data: Point[] }) {
   );
 }
 
-type CustomTooltipProps = TooltipProps<number, string> & {
+type CustomTooltipProps = {
+  active?: boolean;
+  payload?: Array<{ dataKey?: string | number; value?: number | string }>;
+  label?: number | string;
   seriesMap: Record<string, (typeof SERIES)[number]>;
 };
 

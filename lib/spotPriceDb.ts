@@ -5,7 +5,7 @@ import type { SpotPricePayload, SpotPricePoint } from "./spotPriceClient";
 
 const DB_PATH = process.env.ENERGY_DB_PATH ?? path.join(process.cwd(), "data", "energy.db");
 
-let db: Database.Database | null = null;
+let db: any | null = null;
 
 export type SolaxRow = {
   timestamp: string;
@@ -56,7 +56,7 @@ function getDb() {
   return db;
 }
 
-function runMigrations(database: Database.Database) {
+function runMigrations(database: any) {
   const version = database.pragma("user_version", { simple: true }) as number;
 
   if (version < 1) {
@@ -198,7 +198,7 @@ export function listSpotPriceHistory(limit = 30) {
   const stmt = database.prepare(`SELECT payload FROM spot_price_payloads ORDER BY date DESC LIMIT ?`);
   return stmt
     .all(limit)
-    .map((row) => JSON.parse(row.payload as string) as SpotPricePayload);
+    .map((row: { payload: unknown }) => JSON.parse(String(row.payload)) as SpotPricePayload);
 }
 
 export function listSpotPriceStats(limit = 30): SpotDayStats[] {
