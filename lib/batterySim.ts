@@ -47,19 +47,24 @@ export async function runBatteryScenarios(filters: DashboardFilterState, options
 type Sample = { prod: number; cons: number };
 
 function loadSeries(filters: DashboardFilterState): Sample[] {
-  const db = getDb();
-  const since = getSince(filters.range);
-  const rows = db
-    .prepare(
-      `
-      SELECT production_kwh as prod, consumption_kwh as cons
-      FROM measurements
-      WHERE datetime(timestamp) >= datetime(?)
-      ORDER BY timestamp ASC
-    `,
-    )
-    .all(since) as Array<{ prod: number | null; cons: number | null }>;
-  return rows.map((r) => ({ prod: r.prod ?? 0, cons: r.cons ?? 0 })).filter((r) => r.prod > 0 || r.cons > 0);
+  try {
+    const db = getDb();
+    const since = getSince(filters.range);
+    const rows = db
+      .prepare(
+        `
+        SELECT production_kwh as prod, consumption_kwh as cons
+        FROM measurements
+        WHERE datetime(timestamp) >= datetime(?)
+        ORDER BY timestamp ASC
+      `,
+      )
+      .all(since) as Array<{ prod: number | null; cons: number | null }>;
+    return rows.map((r) => ({ prod: r.prod ?? 0, cons: r.cons ?? 0 })).filter((r) => r.prod > 0 || r.cons > 0);
+  } catch (error) {
+    console.warn("BatterySim: nedostupná tabulka measurements nebo DB.", error);
+    return [];
+  }
 }
 
 function getSince(range: DashboardFilterState["range"]) {

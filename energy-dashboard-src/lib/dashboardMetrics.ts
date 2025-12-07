@@ -19,32 +19,37 @@ export function loadEnergyTotals(filters: DashboardFilterState): EnergyTotals | 
     return null;
   }
 
-  const db = new Database(DB_PATH, { fileMustExist: true, readonly: true });
-  const rangeStart = getRangeStart(filters.range);
-  const solaxStmt = db.prepare(`
-    SELECT
-      SUM(pv_output) AS solaxProduction,
-      SUM(grid_feed_in) AS solaxFeedIn,
-      SUM(grid_import) AS solaxImport,
-      SUM(CASE WHEN battery_power < 0 THEN -battery_power ELSE 0 END) AS batteryCharge,
-      SUM(CASE WHEN battery_power > 0 THEN battery_power ELSE 0 END) AS batteryDischarge
-    FROM solax_readings
-    WHERE datetime(timestamp) >= datetime(?)
-  `);
-  const tigoStmt = db.prepare(`
-    SELECT SUM(total) AS tigoProduction
-    FROM tigo_readings
-    WHERE datetime(timestamp) >= datetime(?)
-  `);
+  try {
+    const db = new Database(DB_PATH, { fileMustExist: true, readonly: true });
+    const rangeStart = getRangeStart(filters.range);
+    const solaxStmt = db.prepare(`
+      SELECT
+        SUM(pv_output) AS solaxProduction,
+        SUM(grid_feed_in) AS solaxFeedIn,
+        SUM(grid_import) AS solaxImport,
+        SUM(CASE WHEN battery_power < 0 THEN -battery_power ELSE 0 END) AS batteryCharge,
+        SUM(CASE WHEN battery_power > 0 THEN battery_power ELSE 0 END) AS batteryDischarge
+      FROM solax_readings
+      WHERE datetime(timestamp) >= datetime(?)
+    `);
+    const tigoStmt = db.prepare(`
+      SELECT SUM(total) AS tigoProduction
+      FROM tigo_readings
+      WHERE datetime(timestamp) >= datetime(?)
+    `);
 
-  const solax = solaxStmt.get(rangeStart) as EnergyTotals;
-  const tigo = tigoStmt.get(rangeStart) as EnergyTotals;
-  db.close();
+    const solax = solaxStmt.get(rangeStart) as EnergyTotals;
+    const tigo = tigoStmt.get(rangeStart) as EnergyTotals;
+    db.close();
 
-  return {
-    ...solax,
-    ...tigo,
-  };
+    return {
+      ...solax,
+      ...tigo,
+    };
+  } catch (error) {
+    console.warn("dashboardMetrics: nelze načíst solax/tigo data", error);
+    return null;
+  }
 }
 
 function getRangeStart(range: DashboardFilterState["range"]) {
@@ -83,62 +88,67 @@ export function loadEnergySeries(filters: DashboardFilterState): EnergySeriesPoi
     return [];
   }
 
-  const db = new Database(DB_PATH, { fileMustExist: true, readonly: true });
-  const rangeStart = getRangeStart(filters.range);
-  const bucketFormat = bucketFormatForInterval(filters.interval);
+  try {
+    const db = new Database(DB_PATH, { fileMustExist: true, readonly: true });
+    const rangeStart = getRangeStart(filters.range);
+    const bucketFormat = bucketFormatForInterval(filters.interval);
 
-  const solaxStmt = db.prepare(
-    `
-    SELECT
-      strftime(?, timestamp) || 'Z' AS bucket,
-      SUM(CASE WHEN battery_power < 0 THEN -battery_power ELSE 0 END) AS batteryCharge,
-      SUM(CASE WHEN battery_power > 0 THEN battery_power ELSE 0 END) AS batteryDischarge
-    FROM solax_readings
-    WHERE datetime(timestamp) >= datetime(?)
-    GROUP BY bucket
-    ORDER BY bucket ASC
-  `,
-  );
+    const solaxStmt = db.prepare(
+      `
+      SELECT
+        strftime(?, timestamp) || 'Z' AS bucket,
+        SUM(CASE WHEN battery_power < 0 THEN -battery_power ELSE 0 END) AS batteryCharge,
+        SUM(CASE WHEN battery_power > 0 THEN battery_power ELSE 0 END) AS batteryDischarge
+      FROM solax_readings
+      WHERE datetime(timestamp) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `,
+    );
 
-  const tigoStmt = db.prepare(
-    `
-    SELECT
-      strftime(?, timestamp) || 'Z' AS bucket,
-      SUM(total) AS tigoProduction
-    FROM tigo_readings
-    WHERE datetime(timestamp) >= datetime(?)
-    GROUP BY bucket
-    ORDER BY bucket ASC
-  `,
-  );
+    const tigoStmt = db.prepare(
+      `
+      SELECT
+        strftime(?, timestamp) || 'Z' AS bucket,
+        SUM(total) AS tigoProduction
+      FROM tigo_readings
+      WHERE datetime(timestamp) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `,
+    );
 
-  const solaxRows = solaxStmt.all(bucketFormat, rangeStart) as EnergySeriesPoint[];
-  const tigoRows = tigoStmt.all(bucketFormat, rangeStart) as EnergySeriesPoint[];
-  db.close();
+    const solaxRows = solaxStmt.all(bucketFormat, rangeStart) as EnergySeriesPoint[];
+    const tigoRows = tigoStmt.all(bucketFormat, rangeStart) as EnergySeriesPoint[];
+    db.close();
 
-  const map = new Map<string, EnergySeriesPoint>();
-  const upsert = (row: EnergySeriesPoint) => {
-    if (!row.datetime) {
-      return;
-    }
-    const current = map.get(row.datetime) ?? { datetime: row.datetime };
-    map.set(row.datetime, { ...current, ...row });
-  };
+    const map = new Map<string, EnergySeriesPoint>();
+    const upsert = (row: EnergySeriesPoint) => {
+      if (!row.datetime) {
+        return;
+      }
+      const current = map.get(row.datetime) ?? { datetime: row.datetime };
+      map.set(row.datetime, { ...current, ...row });
+    };
 
-  solaxRows.forEach((row) => {
-    const datetime = row.bucket ?? row.datetime;
-    if (datetime) {
-      upsert({ ...row, datetime });
-    }
-  });
-  tigoRows.forEach((row) => {
-    const datetime = row.bucket ?? row.datetime;
-    if (datetime) {
-      upsert({ ...row, datetime });
-    }
-  });
+    solaxRows.forEach((row) => {
+      const datetime = row.bucket ?? row.datetime;
+      if (datetime) {
+        upsert({ ...row, datetime });
+      }
+    });
+    tigoRows.forEach((row) => {
+      const datetime = row.bucket ?? row.datetime;
+      if (datetime) {
+        upsert({ ...row, datetime });
+      }
+    });
 
-  return Array.from(map.values()).sort((a, b) => a.datetime.localeCompare(b.datetime));
+    return Array.from(map.values()).sort((a, b) => a.datetime.localeCompare(b.datetime));
+  } catch (error) {
+    console.warn("dashboardMetrics: nelze načíst series", error);
+    return [];
+  }
 }
 
 function bucketFormatForInterval(interval: DashboardFilterState["interval"]) {
