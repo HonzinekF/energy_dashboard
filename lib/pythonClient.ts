@@ -31,6 +31,13 @@ export async function loadDashboardData(filters: DashboardFilterState = DEFAULT_
     if (dbPayload) {
       return sortHistory(dbPayload);
     }
+    // Pokud chceme pouze DB, nevracej fallback/demo – vrať prázdná data
+    return {
+      summary: [],
+      history: [],
+      refreshedAt: new Date().toISOString(),
+      sourceUsed: "db",
+    };
   }
 
   if (filters.source === "live") {

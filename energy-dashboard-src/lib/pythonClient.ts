@@ -22,6 +22,19 @@ const HTTP_TIMEOUT = Number(process.env.PY_BACKEND_TIMEOUT ?? 30_000);
 let backendFailureNotified = false;
 
 export async function loadDashboardData(filters: DashboardFilterState = DEFAULT_FILTERS): Promise<DashboardData> {
+  if (filters.source === "db") {
+    const dbPayload = loadDashboardHistoryFromDb(filters);
+    if (dbPayload) {
+      return sortHistory(dbPayload);
+    }
+    return {
+      summary: [],
+      history: [],
+      refreshedAt: new Date().toISOString(),
+      sourceUsed: "db",
+    };
+  }
+
   if (filters.source === "live") {
     const livePayload = await loadFromSolax(filters);
     if (livePayload) {
