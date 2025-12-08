@@ -254,16 +254,16 @@ function buildHistoryFromRealtime(
   const intervalMs = intervalMinutes * 60 * 1000;
   const acpower = result?.acpower ?? 0;
   const feed = result?.feedinpower ?? 0;
-  const consume = result?.consumeenergy ?? 0;
+  const importPower = Math.max(0, acpower - feed);
 
   const history = Array.from({ length: points }).map((_, idx) => {
     const timestamp = new Date(aligned.getTime() - idx * intervalMs).toISOString();
-    const attenuation = 1 - idx / points;
+    // pro live data použijeme konstantní výkon z posledního vzorku
     return {
       datetime: timestamp,
-      production: Math.max(0, acpower * (0.6 + attenuation * 0.4)),
-      export: Math.max(0, feed * (0.5 + attenuation * 0.5)),
-      import: Math.max(0, consume * 100 * (1 - attenuation * 0.7)),
+      production: Math.max(0, acpower),
+      export: Math.max(0, feed),
+      import: importPower,
     };
   });
   return history.reverse();
