@@ -79,7 +79,7 @@ function toNumber(value: number | string | undefined | null) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function createTables(db: Database.Database) {
+function createTables(db: Database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS solax_readings (
       timestamp TEXT PRIMARY KEY,
