@@ -28,7 +28,7 @@ export default async function Home({ searchParams }: HomeProps) {
 
   const spotHistoryLimit = determineSpotHistoryLimit(filters.range);
 
-  const [data, spotPrices, spotHistory, importJobs, energyTotals, energySeries] = await Promise.all([
+  const [data, spotPrices, spotHistoryPromise, importJobs, energyTotals, energySeries] = await Promise.all([
     loadDashboardData(filters),
     fetchSpotPrices(),
     fetchSpotPricesHistory(spotHistoryLimit, filters.range),
@@ -38,6 +38,7 @@ export default async function Home({ searchParams }: HomeProps) {
   ]);
   const spotUpdatedAt = spotPrices?.updatedAt ?? spotPrices?.hourly?.[0]?.from;
   const summary = buildSummaryCards(data.summary, energyTotals);
+  const spotHistory = await spotHistoryPromise;
   const mergedHistory = mergeHistory(data.history, energySeries, spotHistory);
   return (
     <DashboardLayout filters={filters}>
@@ -165,7 +166,7 @@ type HistoryPoint = {
 function mergeHistory(
   history: { datetime: string; production: number; export: number; import: number }[],
   series: ReturnType<typeof loadEnergySeries>,
-  spotHistory: ReturnType<typeof fetchSpotPricesHistory>,
+  spotHistory: Awaited<ReturnType<typeof fetchSpotPricesHistory>>,
 ): HistoryPoint[] {
   const spotMap = new Map<string, number>();
   spotHistory?.forEach((point) => {
