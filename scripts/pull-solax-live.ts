@@ -81,7 +81,7 @@ function toNumber(value: number | string | undefined | null) {
 
 function createTables(db: unknown) {
   const database = db as Database;
-  database.exec(`
+  (database as any).exec(`
     CREATE TABLE IF NOT EXISTS solax_readings (
       timestamp TEXT PRIMARY KEY,
       interval_minutes INTEGER NOT NULL,
