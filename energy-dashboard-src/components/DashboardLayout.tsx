@@ -44,6 +44,7 @@ export function DashboardLayout({ children, filters }: { children: React.ReactNo
                   <Link
                     key={item.label}
                     href={item.href}
+                    prefetch={item.disabled ? false : undefined}
                     onClick={(event) => {
                       if (item.disabled) {
                         event.preventDefault();

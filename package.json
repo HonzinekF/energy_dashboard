@@ -8,6 +8,7 @@
     "start": "next start",
     "lint": "eslint",
     "import:energy": "tsx scripts/import-energy-data.ts",
+    "import:measurements": "tsx scripts/import-measurements.ts",
     "test": "vitest run"
   },
   "dependencies": {

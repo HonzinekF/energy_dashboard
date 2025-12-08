@@ -12,7 +12,7 @@ const navItems = [
   { href: "/history", label: "Historie" },
   { href: "/analysis", label: "Analýzy" },
   { href: "/analysis/battery", label: "Kapacita baterie" },
-  { href: "/analysis/roi", label: "Návratnost", disabled: true },
+  { href: "#", label: "Návratnost", disabled: true },
   { href: "/import", label: "Import dat" },
   { href: "/settings", label: "Nastavení" },
 ];
@@ -48,6 +48,7 @@ export function DashboardLayout({ children, filters }: { children: React.ReactNo
                   <Link
                     key={item.label}
                     href={item.href}
+                    prefetch={item.disabled ? false : undefined}
                     onClick={(event) => {
                       if (item.disabled) {
                         event.preventDefault();

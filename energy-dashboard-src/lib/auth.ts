@@ -6,6 +6,7 @@ const SESSION_VALUE = "ok";
 const PASSWORD = process.env.DASHBOARD_PASSWORD ?? "solax";
 const PASSWORD_HASH = process.env.DASHBOARD_PASSWORD_HASH;
 const PASSWORD_PBKDF2 = process.env.DASHBOARD_PASSWORD_PBKDF2;
+const SECURE_COOKIES = process.env.COOKIE_SECURE !== "false" && process.env.NODE_ENV === "production";
 
 export async function isAuthenticated() {
   const cookieStore = await cookies();
@@ -36,7 +37,7 @@ export async function createSession() {
     httpOnly: true,
     sameSite: "lax",
     path: "/",
-    secure: process.env.NODE_ENV === "production",
+    secure: SECURE_COOKIES,
     maxAge: 60 * 60 * 12,
   });
 }
@@ -50,7 +51,7 @@ export async function clearSession() {
     path: "/",
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
+    secure: SECURE_COOKIES,
   });
 }
 
