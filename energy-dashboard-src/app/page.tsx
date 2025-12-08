@@ -38,8 +38,7 @@ export default async function Home({ searchParams }: HomeProps) {
   ]);
   const spotUpdatedAt = spotPrices?.updatedAt ?? spotPrices?.hourly?.[0]?.from;
   const summary = buildSummaryCards(data.summary, energyTotals);
-  const resolvedSpotHistory = await spotHistory;
-  const mergedHistory = mergeHistory(data.history, energySeries, resolvedSpotHistory);
+  const mergedHistory = mergeHistory(data.history, energySeries, spotHistory);
   return (
     <DashboardLayout filters={filters}>
       <DashboardStatus
