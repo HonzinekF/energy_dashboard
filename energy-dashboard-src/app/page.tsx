@@ -38,7 +38,7 @@ export default async function Home({ searchParams }: HomeProps) {
   ]);
   const spotUpdatedAt = spotPrices?.updatedAt ?? spotPrices?.hourly?.[0]?.from;
   const summary = buildSummaryCards(data.summary, energyTotals);
-  const mergedHistory = mergeHistory(data.history, energySeries);
+  const mergedHistory = mergeHistory(data.history, energySeries, spotHistory);
   return (
     <DashboardLayout filters={filters}>
       <DashboardStatus
@@ -159,17 +159,24 @@ type HistoryPoint = {
   batteryCharge?: number;
   batteryDischarge?: number;
   tigoProduction?: number;
+  spotPriceCzk?: number;
 };
 
 function mergeHistory(
   history: { datetime: string; production: number; export: number; import: number }[],
   series: ReturnType<typeof loadEnergySeries>,
+  spotHistory: ReturnType<typeof fetchSpotPricesHistory>,
 ): HistoryPoint[] {
+  const spotMap = new Map<string, number>();
+  spotHistory?.forEach((point) => {
+    spotMap.set(point.date, point.average);
+  });
+
   if (!series?.length) {
-    return history;
+    return history.map((item) => ({ ...item, spotPriceCzk: spotMap.get(item.datetime.slice(0, 10)) }));
   }
   const map = new Map<string, HistoryPoint>();
-  history.forEach((item) => map.set(item.datetime, { ...item }));
+  history.forEach((item) => map.set(item.datetime, { ...item, spotPriceCzk: spotMap.get(item.datetime.slice(0, 10)) }));
   series.forEach((item) => {
     const current = map.get(item.datetime) ?? {
       datetime: item.datetime,
@@ -177,7 +184,7 @@ function mergeHistory(
       export: 0,
       import: 0,
     };
-    map.set(item.datetime, { ...current, ...item });
+    map.set(item.datetime, { ...current, ...item, spotPriceCzk: current.spotPriceCzk ?? spotMap.get(item.datetime.slice(0, 10)) });
   });
   return Array.from(map.values()).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
 }

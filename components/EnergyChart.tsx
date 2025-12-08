@@ -10,6 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
   Brush,
+  Line,
   type TooltipProps,
 } from "recharts";
 import { formatDateTime, formatEnergy, formatShortDate } from "@/lib/format";
@@ -22,6 +23,7 @@ interface Point {
   batteryCharge?: number;
   batteryDischarge?: number;
   tigoProduction?: number;
+  spotPriceCzk?: number;
 }
 
 const SERIES = [
@@ -198,6 +200,14 @@ export function EnergyChart({ data }: { data: Point[] }) {
                 stroke="#94a3b8"
                 label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
               />
+              <YAxis
+                yAxisId="price"
+                orientation="right"
+                tickFormatter={(value) => value.toFixed(2)}
+                width={60}
+                stroke="#f59e0b"
+                label={{ value: "Kč/kWh", angle: 90, position: "insideRight", fill: "#f59e0b", offset: 0 }}
+              />
               <Tooltip content={renderTooltip} />
               {activeSeries.map((series) => (
                 <Area
@@ -211,6 +221,7 @@ export function EnergyChart({ data }: { data: Point[] }) {
                   isAnimationActive={false}
                 />
               ))}
+              <LineSeries />
               <Brush
                 dataKey="ts"
                 travellerWidth={12}
@@ -268,6 +279,14 @@ export function EnergyChart({ data }: { data: Point[] }) {
                     stroke="#94a3b8"
                     label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
                   />
+                  <YAxis
+                    yAxisId="price"
+                    orientation="right"
+                    tickFormatter={(value) => value.toFixed(2)}
+                    width={80}
+                    stroke="#f59e0b"
+                    label={{ value: "Kč/kWh", angle: 90, position: "insideRight", fill: "#f59e0b", offset: 0 }}
+                  />
                   <Tooltip content={renderTooltip} />
                   {activeSeries.map((series) => (
                     <Area
@@ -281,6 +300,7 @@ export function EnergyChart({ data }: { data: Point[] }) {
                       isAnimationActive={false}
                     />
                   ))}
+                  <LineSeries />
                   <Brush
                     dataKey="ts"
                     travellerWidth={12}
@@ -328,6 +348,19 @@ function CustomTooltip({ active, label, payload, seriesMap }: CustomTooltipProps
           if (!entry.dataKey || entry.value === undefined || entry.value === null) {
             return null;
           }
+          if (entry.dataKey === "spotPriceCzk") {
+            return (
+              <li key="spotPriceCzk" className="flex items-center justify-between gap-4 text-sm">
+                <span className="flex items-center gap-2 text-amber-600">
+                  <span className="h-2 w-2 rounded-full bg-amber-500" />
+                  Spot (Kč/kWh)
+                </span>
+                <span className="font-semibold text-slate-900">
+                  {typeof entry.value === "number" ? `${entry.value.toFixed(3)} Kč` : entry.value}
+                </span>
+              </li>
+            );
+          }
           const meta = seriesMap[entry.dataKey as string];
           if (!meta) {
             return null;
@@ -344,6 +377,22 @@ function CustomTooltip({ active, label, payload, seriesMap }: CustomTooltipProps
         })}
       </ul>
     </div>
+  );
+}
+
+function LineSeries() {
+  return (
+    <Area
+      yAxisId="price"
+      type="monotone"
+      dataKey="spotPriceCzk"
+      name="Spot (Kč/kWh)"
+      stroke="#f59e0b"
+      fillOpacity={0}
+      strokeWidth={2}
+      isAnimationActive={false}
+      dot={false}
+    />
   );
 }
 
