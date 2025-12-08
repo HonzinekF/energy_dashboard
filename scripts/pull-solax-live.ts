@@ -79,9 +79,8 @@ function toNumber(value: number | string | undefined | null) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function createTables(db: unknown) {
-  const database = db as Database;
-  (database as any).exec(`
+function createTables(db: any) {
+  db.exec(`
     CREATE TABLE IF NOT EXISTS solax_readings (
       timestamp TEXT PRIMARY KEY,
       interval_minutes INTEGER NOT NULL,
