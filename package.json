@@ -9,6 +9,7 @@
     "lint": "eslint",
     "import:energy": "tsx scripts/import-energy-data.ts",
     "import:measurements": "tsx scripts/import-measurements.ts",
+    "cron:solax": "tsx scripts/pull-solax-live.ts",
     "test": "vitest run"
   },
   "dependencies": {
