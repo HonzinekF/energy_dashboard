@@ -1,10 +1,11 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
+import os from "os";
 import { applyMigrations } from "./schema";
 import type { SpotPricePayload, SpotPricePoint } from "./spotPriceClient";
 
-const DB_PATH = process.env.ENERGY_DB_PATH ?? path.join(process.cwd(), "data", "energy.db");
+const DB_PATH = resolveDbPath();
 
 let db: any | null = null;
 
@@ -46,10 +47,7 @@ type SpotDayStats = {
 
 function getDb() {
   if (!db) {
-    const dir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
+    ensureDir(path.dirname(DB_PATH));
     db = new Database(DB_PATH);
     db.pragma("journal_mode = WAL");
     db.pragma("busy_timeout = 5000");
@@ -252,4 +250,32 @@ export function buildSpotPricePayloadFromPoints(date: string, source = "spotovae
     hourly: aggregatedHourly,
     quarterHourly,
   };
+}
+
+function resolveDbPath() {
+  const defaultPath = path.join(process.cwd(), "data", "energy.db");
+  const fallbackPath = path.join(os.tmpdir(), "energy.db");
+  const candidate = process.env.ENERGY_DB_PATH ?? defaultPath;
+
+  if (ensureDir(path.dirname(candidate))) {
+    return candidate;
+  }
+
+  console.warn(
+    `ENERGY_DB_PATH '${candidate}' nelze vytvořit, používám fallback '${fallbackPath}'. Pro produkci nastav dostupnou cestu nebo externí DB.`,
+  );
+  ensureDir(path.dirname(fallbackPath));
+  return fallbackPath;
+}
+
+function ensureDir(dir: string) {
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    return true;
+  } catch (error) {
+    console.warn("Nelze vytvořit složku pro DB", dir, error);
+    return false;
+  }
 }

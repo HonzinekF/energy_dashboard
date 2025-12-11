@@ -110,11 +110,16 @@ async function loadFromHttpBackend(filters: DashboardFilterState): Promise<Dashb
       }
       return null;
     }
+    const cause = (error as Error & { code?: string }).code;
     if (!backendFailureNotified) {
       console.error("Python backend request failed", error);
       backendFailureNotified = true;
     } else {
       console.warn("Python backend still unreachable");
+    }
+    // Ve Vercelu nechceme spamovat ani házet chybu při lokálním 127.0.0.1
+    if (cause === "ECONNREFUSED" || process.env.VERCEL) {
+      return null;
     }
     return null;
   } finally {

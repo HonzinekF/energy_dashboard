@@ -45,7 +45,21 @@ export async function GET(request: Request) {
     const system = normalizeSystem(url.searchParams.get("system") ?? undefined);
 
     const bounds = resolveRangeBounds(range, from, to);
-    const db = getDb();
+    let db;
+    try {
+      db = getDb();
+    } catch (err) {
+      console.error("DB není dostupná", err);
+      return NextResponse.json({
+        range,
+        interval,
+        dashboardSource,
+        source: "measurements",
+        points: [],
+        totals: null,
+        message: "Databáze není dostupná (read-only prostředí).",
+      });
+    }
 
     // Vyžadujeme pouze lokální measurements; fallback na SolaX vypnutý
     let dashboardSource: "db" | "solax" = "db";

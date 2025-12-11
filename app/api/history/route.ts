@@ -12,7 +12,19 @@ export async function GET(request: Request) {
   const range = ["day", "week", "month", "year"].includes(rangeParam) ? rangeParam : "day";
   const sourceParam = normalizeSource(url.searchParams.get("source") ?? undefined) as DashboardSourceParam | undefined;
 
-  const db = getDb();
+  let db;
+  try {
+    db = getDb();
+  } catch (err) {
+    console.error("DB není dostupná", err);
+    return NextResponse.json({
+      range,
+      dashboardSource: "db",
+      series: [],
+      totals: { production: 0, consumption: 0 },
+      message: "Databáze není dostupná (read-only prostředí).",
+    });
+  }
   const { since, groupFormat } = rangeToSql(range);
 
   const shouldUseSolax = sourceParam === "solax";
