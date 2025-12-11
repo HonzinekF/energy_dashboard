@@ -343,7 +343,9 @@ function rangeToMinutes(
   return 30 * 24 * 60;
 }
 
-function isValidPayload(payload: Partial<DashboardPayload>): payload is DashboardPayload {
+function isValidPayload(
+  payload: Partial<DashboardPayload>,
+): payload is DashboardPayload {
   return Array.isArray(payload.summary) && Array.isArray(payload.history);
 }
 
