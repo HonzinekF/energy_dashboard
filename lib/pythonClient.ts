@@ -1,9 +1,6 @@
 import { execFile } from "child_process";
 import { promisify } from "util";
-import {
-  DEFAULT_FILTERS,
-  type DashboardFilterState,
-} from "./dashboardFilters";
+import { DEFAULT_FILTERS, type DashboardFilterState } from "./dashboardFilters";
 import { fetchSolaxRealtime } from "./solaxClient";
 import { loadDashboardHistoryFromDb } from "./dashboardMetrics";
 
@@ -15,7 +12,7 @@ type SummaryItem = {
   unit?: string;
 };
 
-type HistoryPoint = {
+export type HistoryPoint = {
   datetime: string;
   production: number;
   export: number;
@@ -29,13 +26,7 @@ type DashboardPayload = {
 };
 
 export type DashboardData = DashboardPayload & {
-  sourceUsed:
-    | "solax-live"
-    | "python-backend"
-    | "python-script"
-    | "db"
-    | "solax"
-    | "demo";
+  sourceUsed: "solax-live" | "python-backend" | "python-script" | "db" | "demo";
 };
 
 type DashboardResponse = DashboardPayload;
@@ -45,51 +36,31 @@ const HTTP_TIMEOUT = Number(process.env.PY_BACKEND_TIMEOUT ?? 30_000);
 
 let backendFailureNotified = false;
 
+type SolaxRealtime = NonNullable<
+  Awaited<ReturnType<typeof fetchSolaxRealtime>>
+>;
+
+/**
+ * Hlavní vstupní funkce – načte data podle nastaveného zdroje a má
+ * zabudované fallbacky (HTTP backend → Python script → DB → Solax → demo).
+ */
 export async function loadDashboardData(
   filters: DashboardFilterState = DEFAULT_FILTERS,
 ): Promise<DashboardData> {
-  const effectiveFilters: DashboardFilterState = {
-    ...DEFAULT_FILTERS,
-    ...filters,
-  };
+  const effectiveFilters = filters ?? DEFAULT_FILTERS;
 
-  // 1) Explicitní režim "db" – jen lokální databáze
+  // 1) DB jen pokud je explicitně vybraná
   if (effectiveFilters.source === "db") {
     const dbPayload = loadDashboardHistoryFromDb(effectiveFilters);
     if (dbPayload) {
-      return sortHistory(dbPayload);
+      return sortHistory({
+        ...dbPayload,
+        sourceUsed: "db",
+      });
     }
-
-    // Pokud není v DB nic, vrať prázdná data se zdrojem "db"
-    return {
-      summary: [],
-      history: [],
-      refreshedAt: new Date().toISOString(),
-      sourceUsed: "db",
-    };
   }
 
-  // 2) Režim "solax" – nejdřív DB v SolaX režimu, pak live SolaX
-  if (effectiveFilters.source === "solax") {
-    const dbPayload = loadDashboardHistoryFromDb(effectiveFilters);
-    if (dbPayload) {
-      return sortHistory({ ...dbPayload, sourceUsed: "solax" });
-    }
-
-    const solaxLive = await loadFromSolax(effectiveFilters);
-    if (solaxLive) {
-      return sortHistory({ ...solaxLive, sourceUsed: "solax" });
-    }
-
-    return {
-      summary: [],
-      history: [],
-      refreshedAt: new Date().toISOString(),
-      sourceUsed: "solax",
-    };
-  }
-
-  // 3) Režim "live" – čistě live data z měniče
+  // 2) Live data ze Solaxu (pokud je zvolen zdroj "live")
   if (effectiveFilters.source === "live") {
     const livePayload = await loadFromSolax(effectiveFilters);
     if (livePayload) {
@@ -97,29 +68,32 @@ export async function loadDashboardData(
     }
   }
 
-  // 4) HTTP Python backend (PY_BACKEND_URL)
+  // 3) Zkusit HTTP backend (pokud je nastaven PY_BACKEND_URL)
   try {
     const httpPayload = await loadFromHttpBackend(effectiveFilters);
     if (httpPayload) {
       return sortHistory(httpPayload);
     }
-  } catch {
-    // detaily se logují uvnitř loadFromHttpBackend
+  } catch (error) {
+    console.warn("HTTP backend selhal, pokračuji na fallback", error);
   }
 
-  // 5) Lokální Python script (PY_DASHBOARD_SCRIPT)
+  // 4) Fallback na lokální Python skript (pokud je nastaven PY_DASHBOARD_SCRIPT)
   const scriptPayload = await loadFromPythonScript(effectiveFilters);
   if (scriptPayload) {
     return sortHistory(scriptPayload);
   }
 
-  // 6) DB (auto výběr measurements vs solax_readings)
+  // 5) Zkusit znovu DB (jako obecný fallback)
   const dbPayload = loadDashboardHistoryFromDb(effectiveFilters);
   if (dbPayload) {
-    return sortHistory(dbPayload);
+    return sortHistory({
+      ...dbPayload,
+      sourceUsed: "db",
+    });
   }
 
-  // 7) Poslední pokus – live SolaX, pokud nejsme v explicitním "live" režimu
+  // 6) Pokud nebyl zdroj "live", zkusit ještě jednou live Solax data jako nouzový fallback
   if (effectiveFilters.source !== "live") {
     const fallbackLive = await loadFromSolax(effectiveFilters);
     if (fallbackLive) {
@@ -127,10 +101,13 @@ export async function loadDashboardData(
     }
   }
 
-  // 8) Demo fallback
+  // 7) Poslední nouzový fallback – demo data
   return sortHistory(buildFallback(effectiveFilters));
 }
 
+/**
+ * HTTP backend (fastapi / flask atd.) – volá se přes PY_BACKEND_URL.
+ */
 async function loadFromHttpBackend(
   filters: DashboardFilterState,
 ): Promise<DashboardData | null> {
@@ -144,9 +121,7 @@ async function loadFromHttpBackend(
   try {
     const res = await fetch(HTTP_ENDPOINT, {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ filters }),
       signal: controller.signal,
     });
@@ -155,7 +130,7 @@ async function loadFromHttpBackend(
       console.warn(
         "Python backend responded with non-OK status",
         res.status,
-        await safeText(res),
+        await res.text(),
       );
       return null;
     }
@@ -169,9 +144,7 @@ async function loadFromHttpBackend(
 
     return { ...json, sourceUsed: "python-backend" };
   } catch (error) {
-    const err = error as Error & { code?: string };
-
-    if (err.name === "AbortError") {
+    if ((error as Error).name === "AbortError") {
       if (!backendFailureNotified) {
         console.error("Python backend request timed out");
         backendFailureNotified = true;
@@ -185,26 +158,15 @@ async function loadFromHttpBackend(
     } else {
       console.warn("Python backend still unreachable");
     }
-
-    // Ve Vercelu ignoruj lokální backend (127.0.0.1)
-    if (err.code === "ECONNREFUSED" || process.env.VERCEL) {
-      return null;
-    }
-
     return null;
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function safeText(res: Response): Promise<string> {
-  try {
-    return await res.text();
-  } catch {
-    return "";
-  }
-}
-
+/**
+ * Spuštění lokálního Python skriptu (PY_DASHBOARD_SCRIPT, PY_WORKDIR).
+ */
 async function loadFromPythonScript(
   filters: DashboardFilterState,
 ): Promise<DashboardData | null> {
@@ -231,12 +193,15 @@ async function loadFromPythonScript(
     }
 
     return { ...json, sourceUsed: "python-script" };
-  } catch (error) {
-    console.error("Python dashboard script failed", error);
+  } catch (err) {
+    console.error("Python dashboard script failed", err);
     return null;
   }
 }
 
+/**
+ * Live data ze Solaxu – používá se pro source "live" a jako fallback.
+ */
 async function loadFromSolax(
   filters: DashboardFilterState,
 ): Promise<DashboardData | null> {
@@ -245,70 +210,82 @@ async function loadFromSolax(
     return null;
   }
 
-  const power = result.acpower ?? 0;
-  const feed = result.feedinpower ?? 0;
-  const importPower = Math.max(0, power - feed);
+  const acpower = (result as SolaxRealtime).acpower ?? 0;
+  const feed = (result as SolaxRealtime).feedinpower ?? 0;
+  const importPower = Math.max(0, acpower - feed);
 
   const historyPoints = buildHistoryFromRealtime(
-    result,
+    result as SolaxRealtime,
     filters.range,
     filters.interval,
   );
 
   return {
     summary: [
-      { label: "Aktuální výroba", value: power, unit: "W" },
+      { label: "Aktuální výroba", value: acpower, unit: "W" },
       { label: "Dodávka do sítě", value: feed, unit: "W" },
       { label: "Spotřeba z distribuce", value: importPower, unit: "W" },
       {
         label: "Výroba dnes",
-        value: Math.round((result.yieldtoday ?? 0) * 1000) / 1000,
+        value:
+          Math.round(((result as SolaxRealtime).yieldtoday ?? 0) * 1000) /
+          1000,
         unit: "kWh",
       },
     ],
     history: historyPoints,
-    refreshedAt: result.uploadTime ?? new Date().toISOString(),
+    refreshedAt:
+      (result as SolaxRealtime).uploadTime ?? new Date().toISOString(),
     sourceUsed: "solax-live",
   };
 }
 
+/**
+ * Demo fallback – když selže úplně všechno.
+ */
 function buildFallback(filters: DashboardFilterState): DashboardData {
   const pointCount = determinePointCount(filters.range, filters.interval);
+
   const multiplier =
-    filters.source === "excel" ? 1.2 : filters.source === "python" ? 0.9 : 1;
+    filters.source === "excel"
+      ? 1.2
+      : filters.source === "python"
+        ? 0.9
+        : 1;
+
   const intervalMinutes = intervalToMinutes(filters.interval);
 
   const history: HistoryPoint[] = Array.from({ length: pointCount }).map(
-    (_, idx) => {
-      const datetime = new Date(
+    (_, idx) => ({
+      datetime: new Date(
         Date.now() - idx * intervalMinutes * 60 * 1000,
-      ).toISOString();
-
-      const production =
-        Math.max(
-          0,
-          40 + Math.sin(idx / 5) * 20 + (idx % 7) * 2,
-        ) * multiplier;
-
-      const exported =
-        Math.max(0, 15 + Math.cos(idx / 6) * 10) * multiplier;
-      const imported =
-        Math.max(0, 10 + Math.sin(idx / 4) * 15) / multiplier;
-
-      return {
-        datetime,
-        production,
-        export: exported,
-        import: imported,
-      };
-    },
+      ).toISOString(),
+      production:
+        Math.max(0, 40 + Math.sin(idx / 5) * 20 + (idx % 7) * 2) *
+        multiplier,
+      export: Math.max(0, 15 + Math.cos(idx / 6) * 10) * multiplier,
+      import:
+        Math.max(0, 10 + Math.sin(idx / 4) * 15) / multiplier,
+    }),
   );
 
   return {
     summary: [
-      { label: "Výroba FVE", value: Math.round(3456 * multiplier), unit: "kWh" },
-      { label: "Prodej do ČEZ", value: Math.round(1240 * multiplier), unit: "kWh" },
-      { label: "Dokup z ČEZ", value: Math.round(890 / multiplier), unit: "kWh" },
+      {
+        label: "Výroba FVE",
+        value: Math.round(3456 * multiplier),
+        unit: "kWh",
+      },
+      {
+        label: "Prodej do ČEZ",
+        value: Math.round(1240 * multiplier),
+        unit: "kWh",
+      },
+      {
+        label: "Dokup z ČEZ",
+        value: Math.round(890 / multiplier),
+        unit: "kWh",
+      },
       {
         label: "Úspora celkem",
         value: Math.round(122_000 * multiplier),
@@ -338,7 +315,9 @@ function intervalToMinutes(
   return 60;
 }
 
-function rangeToMinutes(range: DashboardFilterState["range"]): number {
+function rangeToMinutes(
+  range: DashboardFilterState["range"],
+): number {
   const now = new Date();
 
   if (range === "24h") return 24 * 60;
@@ -360,29 +339,31 @@ function rangeToMinutes(range: DashboardFilterState["range"]): number {
     return Math.round((end.getTime() - start.getTime()) / (60 * 1000));
   }
 
-  // default – 30 dní
+  // default: 30 dní
   return 30 * 24 * 60;
 }
 
-function isValidPayload(
-  payload: Partial<DashboardResponse>,
-): payload is DashboardPayload {
+function isValidPayload(payload: Partial<DashboardPayload>): payload is DashboardPayload {
   return Array.isArray(payload.summary) && Array.isArray(payload.history);
 }
 
+/**
+ * Seřadí history podle času vzestupně.
+ */
 function sortHistory<T extends { history: HistoryPoint[] }>(payload: T): T {
   return {
     ...payload,
     history: [...payload.history].sort(
-      (a, b) => new Date(a.datetime).getTime() - new Date(b.datetime).getTime(),
+      (a, b) =>
+        new Date(a.datetime).getTime() -
+        new Date(b.datetime).getTime(),
     ),
   };
 }
 
-type SolaxRealtime = NonNullable<
-  Awaited<ReturnType<typeof fetchSolaxRealtime>>
->;
-
+/**
+ * Z jednoho live vzorku (Solax) vyrobí historická data pro graf.
+ */
 function buildHistoryFromRealtime(
   result: SolaxRealtime,
   range: DashboardFilterState["range"],
@@ -416,9 +397,17 @@ function buildHistoryFromRealtime(
   return history.reverse();
 }
 
-function alignTimestamp(date: Date, intervalMinutes: number): Date {
+/**
+ * Zarovnání času na nejbližší interval (např. 15min bucket).
+ */
+function alignTimestamp(
+  date: Date,
+  intervalMinutes: number,
+): Date {
   const bucketMs =
-    Math.floor(date.getTime() / (intervalMinutes * 60 * 1000)) *
+    Math.floor(
+      date.getTime() / (intervalMinutes * 60 * 1000),
+    ) *
     intervalMinutes *
     60 *
     1000;
