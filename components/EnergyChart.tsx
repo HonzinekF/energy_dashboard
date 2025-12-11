@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useCallback, useEffect, useId, useMemo, useState } from "react";
+import { useCallback, useId, useMemo, useState } from "react";
 import {
   AreaChart,
   Area,
@@ -10,20 +10,17 @@ import {
   Tooltip,
   ResponsiveContainer,
   Brush,
-  Line,
   type TooltipProps,
 } from "recharts";
 import { formatDateTime, formatEnergy, formatShortDate } from "@/lib/format";
 
 interface Point {
   datetime: string;
-  production: number;
-  export: number;
-  import: number;
-  batteryCharge?: number;
-  batteryDischarge?: number;
+  production?: number;
+  consumption?: number;
+  export?: number;
+  import?: number;
   tigoProduction?: number;
-  spotPriceCzk?: number;
 }
 
 const SERIES = [
@@ -35,15 +32,22 @@ const SERIES = [
     gradientTo: "#10b98110",
   },
   {
+    key: "consumption",
+    label: "Spotřeba",
+    stroke: "#0f172a",
+    gradientFrom: "#0f172a",
+    gradientTo: "#0f172a0f",
+  },
+  {
     key: "export",
-    label: "Prodej",
+    label: "Dodávka do sítě",
     stroke: "#2563eb",
     gradientFrom: "#2563eb",
     gradientTo: "#bfdbfe40",
   },
   {
     key: "import",
-    label: "Dokup",
+    label: "Nákup ze sítě",
     stroke: "#f97316",
     gradientFrom: "#f97316",
     gradientTo: "#fed7aa40",
@@ -54,20 +58,6 @@ const SERIES = [
     stroke: "#0ea5e9",
     gradientFrom: "#0ea5e9",
     gradientTo: "#0ea5e910",
-  },
-  {
-    key: "batteryDischarge",
-    label: "Vybíjení baterie",
-    stroke: "#7c3aed",
-    gradientFrom: "#7c3aed",
-    gradientTo: "#c4b5fd40",
-  },
-  {
-    key: "batteryCharge",
-    label: "Nabíjení baterie",
-    stroke: "#a855f7",
-    gradientFrom: "#a855f7",
-    gradientTo: "#f3e8ff40",
   },
 ] as const satisfies Array<{
   key: keyof Point;
@@ -82,7 +72,6 @@ type SeriesKey = (typeof SERIES)[number]["key"];
 export function EnergyChart({ data }: { data: Point[] }) {
   const chartId = useId();
   const [visibleSeries, setVisibleSeries] = useState<SeriesKey[]>(() => SERIES.map((series) => series.key));
-  const [fullscreen, setFullscreen] = useState(false);
   const cleanedData = useMemo(() => sanitizeData(data), [data]);
   const chartData = useMemo(() => cleanedData.map((point) => ({ ...point, ts: Date.parse(point.datetime) })), [cleanedData]);
   const seriesMap = useMemo(
@@ -108,20 +97,6 @@ export function EnergyChart({ data }: { data: Point[] }) {
 
   const activeSeries = SERIES.filter((series) => visibleSeries.includes(series.key));
 
-  useEffect(() => {
-    function handleKey(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setFullscreen(false);
-      }
-    }
-    if (fullscreen) {
-      window.addEventListener("keydown", handleKey);
-    }
-    return () => {
-      window.removeEventListener("keydown", handleKey);
-    };
-  }, [fullscreen]);
-
   if (!chartData.length) {
     return (
       <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm min-w-0 w-full">
@@ -144,13 +119,6 @@ export function EnergyChart({ data }: { data: Point[] }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setFullscreen(true)}
-              className="rounded-lg border border-slate-200 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
-            >
-              Celá obrazovka
-            </button>
             {SERIES.map((series) => {
               const isActive = visibleSeries.includes(series.key);
               return (
@@ -200,14 +168,6 @@ export function EnergyChart({ data }: { data: Point[] }) {
                 stroke="#94a3b8"
                 label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
               />
-              <YAxis
-                yAxisId="price"
-                orientation="right"
-                tickFormatter={(value) => value.toFixed(2)}
-                width={60}
-                stroke="#f59e0b"
-                label={{ value: "Kč/kWh", angle: 90, position: "insideRight", fill: "#f59e0b", offset: 0 }}
-              />
               <Tooltip content={renderTooltip} />
               {activeSeries.map((series) => (
                 <Area
@@ -221,7 +181,6 @@ export function EnergyChart({ data }: { data: Point[] }) {
                   isAnimationActive={false}
                 />
               ))}
-              <LineSeries />
               <Brush
                 dataKey="ts"
                 travellerWidth={12}
@@ -235,86 +194,6 @@ export function EnergyChart({ data }: { data: Point[] }) {
         </div>
       </div>
 
-      {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm">
-          <div className="absolute inset-4 flex flex-col rounded-2xl bg-white shadow-2xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3">
-              <div>
-                <p className="text-sm font-medium text-slate-700">Energetický tok (celá obrazovka)</p>
-                <p className="text-xs text-slate-500">Stiskněte Esc nebo Zavřít pro návrat</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setFullscreen(false)}
-                className="rounded-lg border border-slate-200 px-3 py-1 text-sm font-medium text-slate-600 hover:bg-slate-50"
-              >
-                Zavřít
-              </button>
-            </div>
-            <div className="flex-1 min-h-[20rem] p-4" style={{ minWidth: 0 }}>
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={chartData} margin={{ left: 24, right: 24, bottom: 24 }}>
-                  <defs>
-                    {SERIES.map((series) => (
-                      <linearGradient key={series.key} id={`${chartId}-full-${series.key}`} x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor={series.gradientFrom} stopOpacity={0.6} />
-                        <stop offset="95%" stopColor={series.gradientTo} stopOpacity={0.1} />
-                      </linearGradient>
-                    ))}
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
-                  <XAxis
-                    dataKey="ts"
-                    type="number"
-                    domain={["dataMin", "dataMax"]}
-                    scale="time"
-                    allowDuplicatedCategory={false}
-                    tickFormatter={(value) => formatShortDate(new Date(value as number).toISOString())}
-                    minTickGap={32}
-                    stroke="#94a3b8"
-                  />
-                  <YAxis
-                    tickFormatter={(value) => value.toLocaleString("cs-CZ")}
-                    width={80}
-                    stroke="#94a3b8"
-                    label={{ value: "kWh", angle: -90, position: "insideLeft", fill: "#94a3b8", offset: 10 }}
-                  />
-                  <YAxis
-                    yAxisId="price"
-                    orientation="right"
-                    tickFormatter={(value) => value.toFixed(2)}
-                    width={80}
-                    stroke="#f59e0b"
-                    label={{ value: "Kč/kWh", angle: 90, position: "insideRight", fill: "#f59e0b", offset: 0 }}
-                  />
-                  <Tooltip content={renderTooltip} />
-                  {activeSeries.map((series) => (
-                    <Area
-                      key={series.key}
-                      type="monotone"
-                      dataKey={series.key}
-                      name={series.label}
-                      stroke={series.stroke}
-                      fill={`url(#${chartId}-full-${series.key})`}
-                      strokeWidth={2}
-                      isAnimationActive={false}
-                    />
-                  ))}
-                  <LineSeries />
-                  <Brush
-                    dataKey="ts"
-                    travellerWidth={12}
-                    height={36}
-                    stroke="#94a3b8"
-                    fill="#f8fafc"
-                    className="[&_.recharts-brush]:rounded-xl"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      )}
     </>
   );
 }
@@ -348,19 +227,6 @@ function CustomTooltip({ active, label, payload, seriesMap }: CustomTooltipProps
           if (!entry.dataKey || entry.value === undefined || entry.value === null) {
             return null;
           }
-          if (entry.dataKey === "spotPriceCzk") {
-            return (
-              <li key="spotPriceCzk" className="flex items-center justify-between gap-4 text-sm">
-                <span className="flex items-center gap-2 text-amber-600">
-                  <span className="h-2 w-2 rounded-full bg-amber-500" />
-                  Spot (Kč/kWh)
-                </span>
-                <span className="font-semibold text-slate-900">
-                  {typeof entry.value === "number" ? `${entry.value.toFixed(3)} Kč` : entry.value}
-                </span>
-              </li>
-            );
-          }
           const meta = seriesMap[entry.dataKey as string];
           if (!meta) {
             return null;
@@ -380,22 +246,6 @@ function CustomTooltip({ active, label, payload, seriesMap }: CustomTooltipProps
   );
 }
 
-function LineSeries() {
-  return (
-    <Area
-      yAxisId="price"
-      type="monotone"
-      dataKey="spotPriceCzk"
-      name="Spot (Kč/kWh)"
-      stroke="#f59e0b"
-      fillOpacity={0}
-      strokeWidth={2}
-      isAnimationActive={false}
-      dot={false}
-    />
-  );
-}
-
 function sanitizeData(data: Point[]) {
   const now = Date.now();
   const maxFuture = now + 1000 * 60 * 60 * 24 * 365; // 1 rok dopředu
@@ -407,13 +257,20 @@ function sanitizeData(data: Point[]) {
     const ts = Date.parse(point.datetime);
     if (!Number.isFinite(ts)) return;
     if (ts > maxFuture || ts < maxPast) return;
-    const base = [point.production, point.export, point.import];
-    const extra = [point.tigoProduction, point.batteryCharge, point.batteryDischarge].filter(
-      (v) => v !== undefined && v !== null,
-    );
-    if (!base.every((v) => typeof v === "number" && Number.isFinite(v))) return;
-    if (!extra.every((v) => typeof v === "number" && Number.isFinite(v))) return;
-    map.set(ts, { ...point, datetime: new Date(ts).toISOString() });
+    const production = toNumber(point.production);
+    const consumption = toNumber(point.consumption);
+    const gridExport = toNumber(point.export);
+    const gridImport = toNumber(point.import);
+    const tigo = toNumber(point.tigoProduction);
+    map.set(ts, {
+      ...point,
+      production,
+      consumption,
+      export: gridExport,
+      import: gridImport,
+      tigoProduction: tigo || undefined,
+      datetime: new Date(ts).toISOString(),
+    });
   });
 
   const sanitized = Array.from(map.entries())
@@ -427,4 +284,8 @@ function sanitizeData(data: Point[]) {
   const step = Math.ceil(sanitized.length / MAX_POINTS);
   const downsampled = sanitized.filter((_, idx) => idx % step === 0 || idx === sanitized.length - 1);
   return downsampled;
+}
+
+function toNumber(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }

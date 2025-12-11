@@ -1,3 +1,11 @@
+import { redirect } from "next/navigation";
+
+export default function Home() {
+  redirect("/dashboard");
+  return null;
+}
+
+/* Původní implementace ponechána pro referenci
 import { DashboardLayout } from "@/components/DashboardLayout";
 import { MetricCard } from "@/components/MetricCard";
 import { EnergyChart } from "@/components/EnergyChart";
@@ -189,3 +197,4 @@ function mergeHistory(
   });
   return Array.from(map.values()).sort((a, b) => Date.parse(a.datetime) - Date.parse(b.datetime));
 }
+*/

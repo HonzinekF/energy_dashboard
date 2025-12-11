@@ -3,9 +3,9 @@
 import { useCallback, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { DashboardFilterState } from "@/lib/dashboardFilters";
-import { DEFAULT_FILTERS, availableIntervals, availableRanges, availableSources } from "@/lib/dashboardFilters";
+import { DATA_SOURCES, DEFAULT_FILTERS, availableIntervals, availableRanges, availableSources } from "@/lib/dashboardFilters";
 
-export function DashboardFilterBar({ filters }: { filters: DashboardFilterState }) {
+export function DashboardFilterBar({ filters, systems }: { filters: DashboardFilterState; systems?: string[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -20,6 +20,14 @@ export function DashboardFilterBar({ filters }: { filters: DashboardFilterState 
       } else {
         nextParams.set(key, value);
       }
+      // pokud měníme range mimo custom, smaž vlastní datumy
+      if (key === "range" && value !== "custom") {
+        nextParams.delete("from");
+        nextParams.delete("to");
+      }
+      // čištění prázdných from/to
+      if (key === "from" && !value) nextParams.delete("from");
+      if (key === "to" && !value) nextParams.delete("to");
       const query = nextParams.toString();
       startTransition(() => {
         router.push(query ? `${pathname}?${query}` : pathname);
@@ -35,7 +43,7 @@ export function DashboardFilterBar({ filters }: { filters: DashboardFilterState 
         <p className="text-sm text-slate-500">Zobrazení</p>
         <p className="text-base font-medium text-slate-900">
           {labelForValue(filters.range, availableRanges())},{" "}
-          {labelForValue(filters.source, availableSources())},{" "}
+          {labelForValue(filters.source, DATA_SOURCES)},{" "}
           {labelForValue(filters.interval, availableIntervals())}
         </p>
       </div>
@@ -58,6 +66,13 @@ export function DashboardFilterBar({ filters }: { filters: DashboardFilterState 
           options={availableSources()}
           onChange={(value) => updateFilter("source", value)}
         />
+        <SystemSelect systems={systems} value={filters.system ?? "default"} onChange={(value) => updateFilter("system", value)} />
+        <DateInputs
+          disabled={filters.range !== "custom"}
+          from={filters.from ?? undefined}
+          to={filters.to ?? undefined}
+          onChange={(key, val) => updateFilter(key, val ?? "")}
+        />
       </div>
     </div>
   );
@@ -66,7 +81,7 @@ export function DashboardFilterBar({ filters }: { filters: DashboardFilterState 
 type FilterSelectProps = {
   label: string;
   value: string;
-  options: ReadonlyArray<{ value: string; label: string }>;
+  options: ReadonlyArray<{ value: string; label: string; disabled?: boolean }>;
   onChange: (value: string) => void;
 };
 
@@ -80,7 +95,7 @@ function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
         onChange={(event) => onChange(event.target.value)}
       >
         {options.map((option) => (
-          <option key={option.value} value={option.value}>
+          <option key={option.value} value={option.value} disabled={option.disabled}>
             {option.label}
           </option>
         ))}
@@ -91,4 +106,61 @@ function FilterSelect({ label, value, options, onChange }: FilterSelectProps) {
 
 function labelForValue(value: string, options: ReadonlyArray<{ value: string; label: string }>) {
   return options.find((option) => option.value === value)?.label ?? value;
+}
+
+function SystemSelect({ systems, value, onChange }: { systems?: string[]; value: string; onChange: (v: string) => void }) {
+  const opts = systems && systems.length ? systems : ["default"];
+  return (
+    <label className="text-sm text-slate-600 flex flex-col gap-1">
+      Systém
+      <select
+        className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {opts.map((id) => (
+          <option key={id} value={id}>
+            {id}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+}
+
+function DateInputs({
+  from,
+  to,
+  disabled,
+  onChange,
+}: {
+  from?: string;
+  to?: string;
+  disabled?: boolean;
+  onChange: (key: "from" | "to", value: string | null) => void;
+}) {
+  return (
+    <div className="flex gap-2">
+      <label className="text-sm text-slate-600 flex flex-col gap-1">
+        Od
+        <input
+          type="date"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+          disabled={disabled}
+          value={from ?? ""}
+          onChange={(e) => onChange("from", e.target.value || null)}
+        />
+      </label>
+      <label className="text-sm text-slate-600 flex flex-col gap-1">
+        Do
+        <input
+          type="date"
+          className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 disabled:opacity-50"
+          disabled={disabled}
+          value={to ?? ""}
+          onChange={(e) => onChange("to", e.target.value || null)}
+        />
+      </label>
+    </div>
+  );
 }

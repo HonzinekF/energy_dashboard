@@ -11,6 +11,7 @@ const SOURCE_OPTIONS = [
   { value: "live", label: "Live data" },
   { value: "python", label: "Python backend" },
   { value: "excel", label: "Excel import" },
+  { value: "db", label: "Lokální DB" },
 ] as const;
 
 const INTERVAL_OPTIONS = [
@@ -31,7 +32,7 @@ export type DashboardFilterState = {
 
 export const DEFAULT_FILTERS: DashboardFilterState = {
   range: "24h",
-  source: "live",
+  source: "db",
   interval: "1h",
 };
 

@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import path from "path";
 import { fetchSolaxRealtime } from "../lib/solaxClient";
+import { applyMigrations } from "../lib/schema";
 
 const DB_PATH = process.env.ENERGY_DB_PATH ?? path.join(process.cwd(), "data", "energy.db");
 const INTERVAL_MIN = Number(process.env.SOLAX_INTERVAL_MIN ?? 5);
@@ -24,10 +25,12 @@ async function main() {
   // Přepočet na kWh za daný interval (default 5 min)
   const interval_hours = INTERVAL_MIN / 60;
   const production_kwh = pv_kw * interval_hours;
-  const consumption_kwh = import_kw * interval_hours;
+  const grid_export_kwh = feed_kw * interval_hours;
+  const grid_import_kwh = import_kw * interval_hours;
+  const consumption_kwh = Math.max(0, production_kwh - grid_export_kwh + grid_import_kwh);
 
   const db = new Database(DB_PATH);
-  createTables(db);
+  applyMigrations(db);
 
   const insertSolax = db.prepare(`
     INSERT OR REPLACE INTO solax_readings (timestamp, interval_minutes, pv_output, battery_soc, battery_power, grid_feed_in, grid_import, source)
@@ -46,14 +49,16 @@ async function main() {
   });
 
   const insertMeas = db.prepare(`
-    INSERT OR REPLACE INTO measurements (timestamp, production_kwh, consumption_kwh)
-    VALUES (@timestamp, @production_kwh, @consumption_kwh)
+    INSERT OR REPLACE INTO measurements (timestamp, production_kwh, consumption_kwh, grid_import_kwh, grid_export_kwh)
+    VALUES (@timestamp, @production_kwh, @consumption_kwh, @grid_import_kwh, @grid_export_kwh)
   `);
 
   insertMeas.run({
     timestamp: ts,
     production_kwh: production_kwh,
     consumption_kwh: consumption_kwh,
+    grid_import_kwh: grid_import_kwh,
+    grid_export_kwh: grid_export_kwh,
   });
 
   console.log(
@@ -77,26 +82,6 @@ function toNumber(value: number | string | undefined | null) {
   if (value === undefined || value === null) return 0;
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : 0;
-}
-
-function createTables(db: any) {
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS solax_readings (
-      timestamp TEXT PRIMARY KEY,
-      interval_minutes INTEGER NOT NULL,
-      pv_output REAL,
-      battery_soc REAL,
-      battery_power REAL,
-      grid_feed_in REAL,
-      grid_import REAL,
-      source TEXT DEFAULT 'solax'
-    );
-    CREATE TABLE IF NOT EXISTS measurements (
-      timestamp TEXT PRIMARY KEY,
-      production_kwh REAL,
-      consumption_kwh REAL
-    );
-  `);
 }
 
 main().catch((err) => {

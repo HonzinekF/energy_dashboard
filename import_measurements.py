@@ -1,7 +1,7 @@
   import csv, sqlite3
   from datetime import datetime
 
-  CSV_PATH = "/opt/energy_dashboard/energy_report_JAN_FAIT_ALL.csv"
+  CSV_PATH = "/Users/janfait/energy-dashboard/energy_report_JAN_FAIT_ALL.csv"
   DB_PATH = "/opt/energy_dashboard/data/energy.db"
   COL_TS = "Datetime_15min"
   COL_PROD = "Výroba FVE (kWh)"
@@ -51,4 +51,3 @@
   print(f"Imported rows: {len(rows)}")
   conn.close()
   PY
-

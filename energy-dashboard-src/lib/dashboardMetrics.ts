@@ -160,3 +160,72 @@ function bucketFormatForInterval(interval: DashboardFilterState["interval"]) {
   }
   return "%Y-%m-%dT%H:00:00";
 }
+
+export function loadDashboardHistoryFromDb(filters: DashboardFilterState) {
+  if (!fs.existsSync(DB_PATH)) {
+    return null;
+  }
+
+  try {
+    const db = new Database(DB_PATH, { fileMustExist: true, readonly: true });
+    const rangeStart = getRangeStart(filters.range);
+    const bucketFormat = bucketFormatForInterval(filters.interval);
+
+    const historyStmt = db.prepare(
+      `
+      SELECT
+        strftime(?, timestamp) || 'Z' AS bucket,
+        SUM(pv_output) AS production,
+        SUM(grid_feed_in) AS export,
+        SUM(grid_import) AS import
+      FROM solax_readings
+      WHERE datetime(timestamp) >= datetime(?)
+      GROUP BY bucket
+      ORDER BY bucket ASC
+    `,
+    );
+
+    const rows = historyStmt.all(bucketFormat, rangeStart) as Array<{
+      bucket: string;
+      production: number | null;
+      export: number | null;
+      import: number | null;
+    }>;
+
+    const history = rows.map((row) => ({
+      datetime: row.bucket,
+      production: row.production ?? 0,
+      export: row.export ?? 0,
+      import: row.import ?? 0,
+    }));
+
+    const summary = history.reduce(
+      (acc, cur) => {
+        acc.production += cur.production;
+        acc.export += cur.export;
+        acc.import += cur.import;
+        return acc;
+      },
+      { production: 0, export: 0, import: 0 },
+    );
+
+    db.close();
+    if (!history.length) {
+      return null;
+    }
+
+    return {
+      summary: [
+        { label: "Výroba FVE", value: summary.production, unit: "kWh" },
+        { label: "Prodej do ČEZ", value: summary.export, unit: "kWh" },
+        { label: "Dokup z ČEZ", value: summary.import, unit: "kWh" },
+      ],
+      history,
+      refreshedAt: new Date().toISOString(),
+      sourceUsed: "db" as const,
+    };
+  } catch (error) {
+    console.warn("loadDashboardHistoryFromDb: DB unavailable", error);
+    return null;
+  }
+}

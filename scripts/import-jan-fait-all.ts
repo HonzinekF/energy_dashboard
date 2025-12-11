@@ -1,9 +1,11 @@
 #!/usr/bin/env ts-node
 /**
- * Jednorázový import agregovaných dat z JAN_FAIT_ALL.csv do SQLite.
+ * Jednorázový import agregovaných dat z energy_report_JAN_FAIT_ALL.csv do SQLite.
  *
  * - Čte CSV se separátorem ';' (15min + hodinová data, dataset All_15min / All_hodiny).
- * - Vloží energie do solax_readings (15 min) a tigo_readings (hodiny).
+ * - Sloupce mapuje jako: výroba = "Výroba FVE (kWh)", Tigo = "Výroba Tigo DC (kWh)",
+ *   dodávka = "Dodávka ČEZ (kWh)", nákup = "Odběr ČEZ (kWh)".
+ * - Vloží energie do solax_readings a tigo_readings – preferuje 15min řádky, hodinové použije jen pokud v dané hodině chybí 15min záznam.
  * - Vloží spot ceny do spot_price_points (použije CZK/MWh, fallback EUR/kWh * 24.3).
  *
  * Spuštění:
@@ -15,25 +17,34 @@
 import fs from "fs";
 import path from "path";
 import Database from "better-sqlite3";
+import XLSX from "xlsx";
 import { parse } from "csv-parse/sync";
 
-const CSV_PATH = process.argv[2] ?? path.join(process.cwd(), "JAN_FAIT_ALL.csv");
+const INPUT_PATH =
+  process.argv[2] ??
+  process.env.JAN_FAIT_CSV_PATH ??
+  "/Users/janfait/Energetika/JAN FAIT/energy_report.xlsx";
 const DB_PATH = process.env.ENERGY_DB_PATH ?? path.join(process.cwd(), "data", "energy.db");
 const MIN_YEAR = 2000;
 const MAX_YEAR = 2030;
 const FX_EUR_CZK = 24.3;
 
+const COL_TS_15 = "Datetime_15min";
+const COL_PRODUCTION = "Výroba FVE (kWh)";
+const COL_TIGO = "Výroba Tigo DC (kWh)";
+const COL_GRID_EXPORT = "Prodej elektřiny do ČEZ (kWh)";
+const COL_GRID_IMPORT = "Odběr ČEZ (kWh)";
+const COL_PRICE_CZK = "SPOT cena (CZK/MWh)";
+const COL_PRICE_EUR_KWH = "SPOT cena (EUR/kWh)";
+const COL_PRICE_EUR_MWH = "SPOT cena (EUR/MWh)";
+const SYSTEM_ID = process.env.SYSTEM_ID ?? "default";
+const USER_ID = process.env.USER_ID ?? "default";
+
 type Row = Record<string, string | number | null>;
 
 function main() {
-  console.log(`Načítám CSV: ${CSV_PATH}`);
-  const content = fs.readFileSync(CSV_PATH, "utf-8");
-  const records = parse(content, {
-    columns: true,
-    delimiter: ";",
-    skip_empty_lines: true,
-    trim: true,
-  }) as Row[];
+  console.log(`Načítám data: ${INPUT_PATH}`);
+  const records = loadRecords(INPUT_PATH);
 
   const solaxRows: Array<{
     timestamp: string;
@@ -61,55 +72,52 @@ function main() {
   }> = [];
 
   for (const rec of records) {
-    const dataset = String(rec["dataset"] ?? "").toLowerCase();
-    const ts15 = toIso(rec["Datetime_15min"]);
-    const tsH = toIso(rec["Datetime_hour"]);
+    const ts15 = toIsoLocal(rec[COL_TS_15]);
+    if (!ts15) continue;
 
-    if (ts15) {
-      // Energie v kWh
-      const pv = num(rec["Výroba FVE (kWh)"]);
-      const feed = num(rec["Prodej elektřiny do ČEZ (kWh)"]);
-      const imp = num(rec["Dokup elektřiny z ČEZ (kWh)"]);
-      const charge = num(rec["Nabití baterie (kWh)"]);
-      const discharge = num(rec["Vybití baterie (kWh)"]);
-      const batteryPower = discharge === null || charge === null ? null : toNull(discharge - charge);
+    const pv = num(rec[COL_PRODUCTION]);
+    const feed = num(rec[COL_GRID_EXPORT]);
+    const imp = num(rec[COL_GRID_IMPORT]);
+    const tigo = num(rec[COL_TIGO]);
 
-      solaxRows.push({
+    solaxRows.push({
+      timestamp: ts15,
+      interval_minutes: 15,
+      pv_output: toNull(pv),
+      grid_feed_in: toNull(feed),
+      grid_import: toNull(imp),
+      battery_power: null,
+      source: "jan_fait_xlsx",
+      system_id: SYSTEM_ID,
+      user_id: USER_ID,
+    });
+
+    if (tigo !== null) {
+      tigoRows.push({
         timestamp: ts15,
         interval_minutes: 15,
-        pv_output: toNull(pv),
-        grid_feed_in: toNull(feed),
-        grid_import: toNull(imp),
-        battery_power: batteryPower,
-        source: dataset || "jan_fait_csv",
+        total: toNull(tigo),
+        system_id: SYSTEM_ID,
+        user_id: USER_ID,
       });
-
-      const priceCZKMwh = num(rec["SPOT cena (CZK/MWh)"]);
-      const priceEURKwh = num(rec["SPOT cena (EUR/kWh)"]);
-      const priceEURMwh = num(rec["SPOT cena (EUR/MWh)"]);
-      if (priceCZKMwh !== null || priceEURKwh !== null || priceEURMwh !== null) {
-        const priceCZK = priceCZKMwh !== null ? priceCZKMwh / 1000 : priceEURKwh !== null ? priceEURKwh * FX_EUR_CZK : null;
-        const priceEUR = priceEURKwh !== null ? priceEURKwh : priceEURMwh !== null ? priceEURMwh / 1000 : null;
-        spotRows.push({
-          timestamp: ts15,
-          resolution_minutes: 15,
-          price_czk_kwh: priceCZK,
-          price_eur_kwh: priceEUR,
-          price_eur_mwh: priceEURMwh,
-          source: "jan_fait_csv",
-        });
-      }
     }
 
-    if (tsH && dataset.includes("hodiny")) {
-      const tigo = num(rec["Výroba Tigo DC (kWh)"]);
-      if (tigo !== null) {
-        tigoRows.push({
-          timestamp: tsH,
-          interval_minutes: 60,
-          total: tigo,
-        });
-      }
+    const priceCZKMwh = num(rec[COL_PRICE_CZK]);
+    const priceEURKwh = num(rec[COL_PRICE_EUR_KWH]);
+    const priceEURMwh = num(rec[COL_PRICE_EUR_MWH]);
+    if (priceCZKMwh !== null || priceEURKwh !== null || priceEURMwh !== null) {
+      const priceCZK = priceCZKMwh !== null ? priceCZKMwh / 1000 : priceEURKwh !== null ? priceEURKwh * FX_EUR_CZK : null;
+      const priceEUR = priceEURKwh !== null ? priceEURKwh : priceEURMwh !== null ? priceEURMwh / 1000 : null;
+      spotRows.push({
+        timestamp: ts15,
+        resolution_minutes: 15,
+        price_czk_kwh: priceCZK,
+        price_eur_kwh: priceEUR,
+        price_eur_mwh: priceEURMwh,
+        source: "jan_fait_xlsx",
+        system_id: SYSTEM_ID,
+        user_id: USER_ID,
+      });
     }
   }
 
@@ -121,31 +129,37 @@ function main() {
   runMigrations(db);
 
   const insertSolax = db.prepare(`
-    INSERT INTO solax_readings (timestamp, interval_minutes, pv_output, battery_soc, battery_power, grid_feed_in, grid_import, source)
-    VALUES (@timestamp, @interval_minutes, @pv_output, NULL, @battery_power, @grid_feed_in, @grid_import, @source)
-    ON CONFLICT(timestamp, interval_minutes, source) DO UPDATE SET
+    INSERT INTO solax_readings (timestamp, interval_minutes, pv_output, battery_soc, battery_power, grid_feed_in, grid_import, source, system_id, user_id)
+    VALUES (@timestamp, @interval_minutes, @pv_output, NULL, @battery_power, @grid_feed_in, @grid_import, @source, @system_id, @user_id)
+    ON CONFLICT(system_id, timestamp, interval_minutes, source) DO UPDATE SET
       pv_output=excluded.pv_output,
       battery_power=excluded.battery_power,
       grid_feed_in=excluded.grid_feed_in,
       grid_import=excluded.grid_import,
-      source=excluded.source
+      source=excluded.source,
+      system_id=excluded.system_id,
+      user_id=excluded.user_id
   `);
 
   const insertTigo = db.prepare(`
-    INSERT INTO tigo_readings (timestamp, interval_minutes, total, string_a, string_b, string_c, string_d)
-    VALUES (@timestamp, @interval_minutes, @total, NULL, NULL, NULL, NULL)
-    ON CONFLICT(timestamp, interval_minutes) DO UPDATE SET
-      total=excluded.total
+    INSERT INTO tigo_readings (timestamp, interval_minutes, total, string_a, string_b, string_c, string_d, system_id, user_id)
+    VALUES (@timestamp, @interval_minutes, @total, NULL, NULL, NULL, NULL, @system_id, @user_id)
+    ON CONFLICT(system_id, timestamp, interval_minutes) DO UPDATE SET
+      total=excluded.total,
+      system_id=excluded.system_id,
+      user_id=excluded.user_id
   `);
 
   const insertSpot = db.prepare(`
-    INSERT INTO spot_price_points (timestamp, resolution_minutes, price_eur_mwh, price_eur_kwh, price_czk_kwh, source)
-    VALUES (@timestamp, @resolution_minutes, @price_eur_mwh, @price_eur_kwh, @price_czk_kwh, @source)
-    ON CONFLICT(timestamp, resolution_minutes) DO UPDATE SET
+    INSERT INTO spot_price_points (timestamp, resolution_minutes, price_eur_mwh, price_eur_kwh, price_czk_kwh, source, system_id, user_id)
+    VALUES (@timestamp, @resolution_minutes, @price_eur_mwh, @price_eur_kwh, @price_czk_kwh, @source, @system_id, @user_id)
+    ON CONFLICT(system_id, timestamp, resolution_minutes) DO UPDATE SET
       price_eur_mwh=excluded.price_eur_mwh,
       price_eur_kwh=excluded.price_eur_kwh,
       price_czk_kwh=excluded.price_czk_kwh,
-      source=excluded.source
+      source=excluded.source,
+      system_id=excluded.system_id,
+      user_id=excluded.user_id
   `);
 
   const tx = db.transaction(() => {
@@ -168,13 +182,42 @@ function toNull(value: number | null | undefined): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
-function toIso(value: unknown): string | null {
+function toIsoLocal(value: unknown): string | null {
   if (!value) return null;
-  const date = new Date(String(value));
-  if (Number.isNaN(date.getTime())) return null;
-  const y = date.getUTCFullYear();
-  if (y < MIN_YEAR || y > MAX_YEAR) return null;
-  return date.toISOString();
+  const raw = String(value).trim();
+  const normalized = raw.replace(" ", "T");
+  // simple sanity check na rok
+  const year = Number(normalized.slice(0, 4));
+  if (!Number.isFinite(year) || year < MIN_YEAR || year > MAX_YEAR) return null;
+  return normalized;
+}
+
+function bucketToHour(timestamp: string) {
+  // timestamp je již bez zónování, takže jen ořízneme na hodinu
+  return timestamp.slice(0, 13) + ":00:00";
+}
+
+function loadRecords(filePath: string): Row[] {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Soubor ${filePath} neexistuje.`);
+  }
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === ".xlsx" || ext === ".xls") {
+    const wb = XLSX.readFile(filePath, { cellDates: false, dense: true });
+    const sheet = wb.Sheets["All_15min"] ?? wb.Sheets[wb.SheetNames[0]];
+    console.log(`Workbook načten: ${wb.SheetNames.length} listů, používám ${sheet ? "All_15min/1." : "žádný"}`);
+    const rows = XLSX.utils.sheet_to_json<Row>(sheet, { defval: "", raw: false, blankrows: false });
+    console.log(`Načteno ${rows.length} řádků ze XLSX`);
+    return rows;
+  }
+
+  const content = fs.readFileSync(filePath, "utf-8");
+  return parse(content, {
+    columns: true,
+    delimiter: ";",
+    skip_empty_lines: true,
+    trim: true,
+  }) as Row[];
 }
 
 function runMigrations(db: any) {

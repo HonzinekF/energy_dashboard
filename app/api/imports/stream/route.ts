@@ -1,14 +1,9 @@
 import { NextResponse } from "next/server";
-import { isAuthenticated } from "@/lib/auth";
 import { listImportJobs } from "@/lib/importQueue";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
-  if (!(await isAuthenticated())) {
-    return NextResponse.json({ error: "Nepřihlášený uživatel" }, { status: 401 });
-  }
-
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();

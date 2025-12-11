@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDb } from "@/lib/db";
+import { normalizeSource, type DashboardSourceParam } from "@/lib/dashboardFilters";
 
 type Range = "day" | "week" | "month" | "year";
 
@@ -9,13 +10,17 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const rangeParam = (url.searchParams.get("range") as Range | null) ?? "day";
   const range = ["day", "week", "month", "year"].includes(rangeParam) ? rangeParam : "day";
+  const sourceParam = normalizeSource(url.searchParams.get("source") ?? undefined) as DashboardSourceParam | undefined;
 
   const db = getDb();
   const { since, groupFormat } = rangeToSql(range);
 
-  const series = db
-    .prepare(
-      `
+  const shouldUseSolax = sourceParam === "solax";
+
+  const loadMeasurements = () =>
+    db
+      .prepare(
+        `
       SELECT strftime(?, timestamp) AS bucket,
              SUM(production_kwh) AS production,
              SUM(consumption_kwh) AS consumption
@@ -24,18 +29,11 @@ export async function GET(request: Request) {
       GROUP BY bucket
       ORDER BY bucket ASC
     `,
-    )
-    .all(groupFormat, since) as Array<{ bucket: string; production: number | null; consumption: number | null }>;
+      )
+      .all(groupFormat, since) as Array<{ bucket: string; production: number | null; consumption: number | null }>;
 
-  let history = series.map((row) => ({
-    datetime: row.bucket,
-    production: row.production ?? 0,
-    consumption: row.consumption ?? 0,
-  }));
-
-  // Fallback: pokud measurements jsou prázdné, agreguj ze solax_readings
-  if (!history.length) {
-    const fallback = db
+  const loadSolax = () =>
+    db
       .prepare(
         `
         SELECT
@@ -51,6 +49,17 @@ export async function GET(request: Request) {
       )
       .all(groupFormat, since) as Array<{ bucket: string; production: number | null; export: number | null; gridImport: number | null }>;
 
+  const fromMeasurements = shouldUseSolax ? [] : loadMeasurements();
+  let history = fromMeasurements.map((row) => ({
+    datetime: row.bucket,
+    production: row.production ?? 0,
+    consumption: row.consumption ?? 0,
+  }));
+
+  const useFallback = shouldUseSolax || history.length === 0;
+
+  if (useFallback) {
+    const fallback = loadSolax();
     history = fallback.map((row) => {
       const prod = row.production ?? 0;
       const exp = row.export ?? 0;
@@ -68,6 +77,7 @@ export async function GET(request: Request) {
 
   return NextResponse.json({
     range,
+    dashboardSource: useFallback ? "solax" : "db",
     series: history,
     totals: {
       production: totalProd,

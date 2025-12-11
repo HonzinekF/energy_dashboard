@@ -1,9 +1,6 @@
 import { DashboardLayout } from "@/components/DashboardLayout";
-import { ImportPreview } from "@/components/ImportPreview";
-import { DashboardStatus } from "@/components/DashboardStatus";
-import { DashboardFilterState, normalizeInterval, normalizeRange, normalizeSource } from "@/lib/dashboardFilters";
-import { loadDashboardData } from "@/lib/pythonClient";
-import Link from "next/link";
+import { MeasurementsImportForm } from "@/components/MeasurementsImportForm";
+import { normalizeInterval, normalizeRange, normalizeSource, type DashboardFilterState } from "@/lib/dashboardFilters";
 
 type ImportPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
@@ -16,30 +13,24 @@ export default async function ImportPage({ searchParams }: ImportPageProps) {
     source: normalizeSource(resolved?.source),
     interval: normalizeInterval(resolved?.interval),
   };
-  const data = await loadDashboardData(filters);
 
   return (
-    <DashboardLayout filters={filters}>
-      <div className="flex flex-col gap-3 pb-4 md:flex-row md:items-center md:justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-slate-900">Import dat</h1>
-          <p className="text-sm text-slate-600">Nahrajte CSV/XLS, ověřte hlavičky a importujte do systému.</p>
-        </div>
-        <Link
-          href="/"
-          className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-        >
-          Zpět na dashboard
-        </Link>
+    <DashboardLayout
+      title="Import dat"
+      description="CSV/XLSX import do tabulky measurements s kontrolou hlaviček."
+      filters={filters}
+      showFilters={false}
+    >
+      <div className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Postup</h2>
+        <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+          <li>Vyberte soubor CSV nebo XLSX z exportu (Datetime_15min, Výroba FVE, Odběr + Dokup elektřiny z ČEZ).</li>
+          <li>Soubor je ověřen na požadované sloupce; chyby se zobrazí jako čitelné hlášky.</li>
+          <li>Import používá INSERT OR REPLACE – stejné timestampy se přepíší.</li>
+        </ul>
       </div>
 
-      <DashboardStatus
-        dashboardSource={data.sourceUsed}
-        dashboardUpdatedAt={data.refreshedAt}
-        spotPayload={null}
-      />
-
-      <ImportPreview />
+      <MeasurementsImportForm />
     </DashboardLayout>
   );
 }

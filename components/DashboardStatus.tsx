@@ -93,7 +93,8 @@ function labelForDashboardSource(source: DashboardData["sourceUsed"]) {
   if (source === "solax-live") return "Live (SolaX)";
   if (source === "python-backend") return "Python backend";
   if (source === "python-script") return "Python skript";
-  if (source === "db") return "DB (SQLite)";
+  if (source === "db") return "Lokální DB";
+  if (source === "solax") return "SolaX fallback";
   return "Demo fallback";
 }
 

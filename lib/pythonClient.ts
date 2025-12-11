@@ -16,7 +16,7 @@ type DashboardPayload = {
 };
 
 export type DashboardData = DashboardPayload & {
-  sourceUsed: "solax-live" | "python-backend" | "python-script" | "db" | "demo";
+  sourceUsed: "solax-live" | "python-backend" | "python-script" | "db" | "solax" | "demo";
 };
 
 type DashboardResponse = DashboardPayload;
@@ -280,3 +280,19 @@ function alignTimestamp(date: Date, intervalMinutes: number) {
   const bucketMs = Math.floor(date.getTime() / (intervalMinutes * 60 * 1000)) * intervalMinutes * 60 * 1000;
   return new Date(bucketMs);
 }
+  if (filters.source === "solax") {
+    const dbPayload = loadDashboardHistoryFromDb(filters);
+    if (dbPayload) {
+      return sortHistory({ ...dbPayload, sourceUsed: "solax" });
+    }
+    const solaxLive = await loadFromSolax(filters);
+    if (solaxLive) {
+      return sortHistory({ ...solaxLive, sourceUsed: "solax" });
+    }
+    return {
+      summary: [],
+      history: [],
+      refreshedAt: new Date().toISOString(),
+      sourceUsed: "solax",
+    };
+  }

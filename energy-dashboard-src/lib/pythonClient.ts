@@ -2,6 +2,7 @@ import { execFile } from "child_process";
 import { promisify } from "util";
 import { DEFAULT_FILTERS, type DashboardFilterState } from "./dashboardFilters";
 import { fetchSolaxRealtime } from "./solaxClient";
+import { loadDashboardHistoryFromDb } from "./dashboardMetrics";
 
 const execFileAsync = promisify(execFile);
 
@@ -12,7 +13,7 @@ type DashboardPayload = {
 };
 
 export type DashboardData = DashboardPayload & {
-  sourceUsed: "solax-live" | "python-backend" | "python-script" | "demo";
+  sourceUsed: "solax-live" | "python-backend" | "python-script" | "demo" | "db";
 };
 
 type DashboardResponse = DashboardPayload;

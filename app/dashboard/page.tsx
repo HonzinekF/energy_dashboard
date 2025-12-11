@@ -1,39 +1,169 @@
-import { ChartCard } from "@/components/ChartCard";
-import { SectionTitle } from "@/components/SectionTitle";
+import { headers } from "next/headers";
+import { DashboardLayout } from "@/components/DashboardLayout";
+import { EnergyChart } from "@/components/EnergyChart";
 import { MetricCard } from "@/components/MetricCard";
+import {
+  normalizeInterval,
+  normalizeRange,
+  normalizeSource,
+  normalizeDate,
+  normalizeSystem,
+  type DashboardFilterState,
+} from "@/lib/dashboardFilters";
+import { listSystems } from "@/lib/db";
 
-export default function DashboardPlaceholder() {
-  const kpis = [
-    { label: "Aktuální výroba", value: 4.2, unit: "kW" },
-    { label: "Aktuální spotřeba", value: 3.1, unit: "kW" },
-    { label: "Stav baterie", value: 62, unit: "%" },
-    { label: "Dnešní úspora", value: 185, unit: "Kč" },
-  ];
+type DashboardPoint = {
+  timestamp: string;
+  production_kwh: number;
+  consumption_kwh: number;
+  grid_import_kwh: number;
+  grid_export_kwh: number;
+  tigo_kwh?: number;
+};
+
+type DashboardApiResponse = {
+  points: DashboardPoint[];
+  totals: {
+    production_kwh: number;
+    consumption_kwh: number;
+    grid_import_kwh: number;
+    grid_export_kwh: number;
+    tigo_kwh?: number;
+    balance_kwh: number;
+  } | null;
+  source?: string;
+  dashboardSource?: "db" | "solax";
+  message?: string;
+};
+
+type PageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+  };
+
+export default async function DashboardPage({ searchParams }: PageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const filters: DashboardFilterState = {
+    range: normalizeRange(resolvedSearchParams?.range),
+    source: normalizeSource(resolvedSearchParams?.source),
+    interval: normalizeInterval(resolvedSearchParams?.interval),
+    from: normalizeDate(resolvedSearchParams?.from),
+    to: normalizeDate(resolvedSearchParams?.to),
+    system: normalizeSystem(resolvedSearchParams?.system),
+  };
+  const systems = listSystems();
+  const system = filters.system ?? systems[0] ?? "default";
+  const effectiveFilters: DashboardFilterState = { ...filters, system };
+
+  const headerList = await headers();
+  const cookieHeader = headerList.get("cookie") ?? undefined;
+  const payload = await fetchDashboard(effectiveFilters, cookieHeader);
+  const chartData = payload.points.map((point) => ({
+    datetime: point.timestamp,
+    production: point.production_kwh ?? 0,
+    consumption: point.consumption_kwh ?? 0,
+    export: point.grid_export_kwh ?? 0,
+    import: point.grid_import_kwh ?? 0,
+    tigoProduction: point.tigo_kwh ?? 0,
+  }));
+  const summary = buildSummary(payload.totals);
+  const hasData = chartData.length > 0;
 
   return (
-    <div className="space-y-6">
-      <SectionTitle title="Přehled systému" subtitle="Mock data: výroba, spotřeba, baterie, úspory." />
-      <section className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        {kpis.map((item) => (
+    <DashboardLayout
+      title="Vizualizace energie"
+      description="Výroba, spotřeba a tok do/ze sítě z lokální DB."
+      filters={effectiveFilters}
+      systems={systems}
+    >
+      <section className="flex flex-col gap-2 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-slate-600">
+            <span className="inline-flex items-center gap-2 rounded-full bg-emerald-50 px-3 py-1 text-emerald-700">
+              Zdroj dat: {labelForSource(payload.dashboardSource ?? "db")}
+            </span>
+            {payload.message ? <span className="text-slate-500">{payload.message}</span> : null}
+          </div>
+          <p className="text-xs text-slate-500">
+            Pokud data v čase chybí, import přepíše záznam se stejným časem (INSERT OR REPLACE).
+          </p>
+        </div>
+      </section>
+
+      <EnergyChart data={chartData} />
+
+      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+        {summary.map((item) => (
           <MetricCard key={item.label} {...item} />
         ))}
       </section>
 
-      <ChartCard title="Denní průběh" description="Výroba vs. spotřeba (mock graf)">
-        <div className="flex h-64 items-center justify-center text-slate-500">Graf placeholder</div>
-      </ChartCard>
-
-      <div className="grid gap-4 md:grid-cols-2">
-        <ChartCard title="Vlastní spotřeba vs. síť" description="Donut placeholder">
-          <div className="flex h-56 items-center justify-center text-slate-500">Donut placeholder</div>
-        </ChartCard>
-        <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-sm font-semibold text-slate-800">Doporučení dnes</p>
-          <p className="text-sm text-slate-600">
-            Mock: Mezi 13–15 hod bude přebytek – vhodné prát / ohřívat vodu. Přesuňte spotřebu do odpoledních hodin.
-          </p>
-        </div>
-      </div>
-    </div>
+      {!hasData ? (
+        <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          Žádná data pro vybrané období. Nahrajte CSV přes Import nebo změňte filtr.
+        </p>
+      ) : null}
+    </DashboardLayout>
   );
+}
+
+function buildSummary(
+  totals: DashboardApiResponse["totals"],
+): Array<{ label: string; value: number; unit?: string }> {
+  if (!totals) return [];
+  return [
+    { label: "Celková výroba", value: totals.production_kwh, unit: "kWh" },
+    totals.tigo_kwh ? { label: "Výroba Tigo", value: totals.tigo_kwh, unit: "kWh" } : null,
+    { label: "Celková spotřeba", value: totals.consumption_kwh, unit: "kWh" },
+    { label: "Nákup ze sítě", value: totals.grid_import_kwh, unit: "kWh" },
+    { label: "Dodávka do sítě", value: totals.grid_export_kwh, unit: "kWh" },
+    { label: "Energetická bilance", value: totals.balance_kwh, unit: "kWh" },
+  ].filter(Boolean) as Array<{ label: string; value: number; unit?: string }>;
+}
+
+async function fetchDashboard(filters: DashboardFilterState, cookieHeader?: string) {
+  try {
+    const url = new URL("/api/dashboard", getBaseUrl());
+    url.searchParams.set("range", filters.range);
+    url.searchParams.set("interval", filters.interval);
+    if (filters.source) url.searchParams.set("source", filters.source);
+    if (filters.system) url.searchParams.set("system", filters.system);
+    if (filters.range === "custom") {
+      if (filters.from) url.searchParams.set("from", filters.from);
+      if (filters.to) url.searchParams.set("to", filters.to);
+    }
+    const res = await fetch(url.toString(), {
+      cache: "no-store",
+      headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    });
+    if (!res.ok) {
+      return { points: [], totals: null, message: "API vrátilo chybu." };
+    }
+    const json = (await res.json()) as DashboardApiResponse;
+    return {
+      points: json.points ?? [],
+      totals: json.totals ?? null,
+      source: json.source,
+      dashboardSource: json.dashboardSource,
+      message: json.message,
+    };
+  } catch (error) {
+    console.error("fetchDashboard selhalo", error);
+    return { points: [], totals: null, message: "Nepodařilo se načíst data." };
+  }
+}
+
+function getBaseUrl() {
+  const env = process.env.NEXT_PUBLIC_SITE_URL ?? process.env.APP_ORIGIN;
+  if (env) {
+    return env.startsWith("http") ? env : `https://${env}`;
+  }
+  if (process.env.VERCEL_URL) {
+    return `https://${process.env.VERCEL_URL}`;
+  }
+  const port = process.env.PORT ?? "3000";
+  return `http://127.0.0.1:${port}`;
+}
+
+function labelForSource(source: "db" | "solax") {
+  return source === "db" ? "Lokální DB" : "SolaX fallback";
 }

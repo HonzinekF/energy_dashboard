@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
 import fs from "fs";
 import path from "path";
-import type { DashboardFilterState } from "./dashboardFilters";
+import type { DashboardFilterState, DashboardSourceParam } from "./dashboardFilters";
 
 type EnergyTotals = {
   solaxProduction?: number;
@@ -52,7 +52,10 @@ export function loadEnergyTotals(filters: DashboardFilterState): EnergyTotals | 
   }
 }
 
-function getRangeStart(range: DashboardFilterState["range"]) {
+function getRangeStart(range: DashboardFilterState["range"], customFrom?: string | null, customTo?: string | null) {
+  if (range === "custom" && customFrom) {
+    return `${customFrom}T00:00:00`;
+  }
   const now = new Date();
   if (range === "24h") {
     return new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
@@ -168,31 +171,61 @@ export function loadDashboardHistoryFromDb(filters: DashboardFilterState) {
 
   try {
     const db = new Database(DB_PATH, { fileMustExist: true, readonly: true });
-    const rangeStart = getRangeStart(filters.range);
+    const rangeStart = getRangeStart(filters.range, filters.from, filters.to);
     const bucketFormat = bucketFormatForInterval(filters.interval);
+    const forceSolax = filters.source === "solax";
 
-    const historyStmt = db.prepare(
-      `
-      SELECT
-        strftime(?, timestamp) || 'Z' AS bucket,
-        SUM(pv_output) AS production,
-        SUM(grid_feed_in) AS export,
-        SUM(grid_import) AS import
-      FROM solax_readings
-      WHERE datetime(timestamp) >= datetime(?)
-      GROUP BY bucket
-      ORDER BY bucket ASC
-    `,
-    );
+    const measurementRows = forceSolax
+      ? []
+      : (db
+          .prepare(
+            `
+        SELECT
+          strftime(?, timestamp) || 'Z' AS bucket,
+          SUM(production_kwh) AS production,
+          SUM(grid_export_kwh) AS export,
+          SUM(grid_import_kwh) AS import
+        FROM measurements
+        WHERE datetime(timestamp) >= datetime(?)
+        GROUP BY bucket
+        ORDER BY bucket ASC
+      `,
+          )
+          .all(bucketFormat, rangeStart) as Array<{
+          bucket: string;
+          production: number | null;
+          export: number | null;
+          import: number | null;
+        }>);
 
-    const rows = historyStmt.all(bucketFormat, rangeStart) as Array<{
-      bucket: string;
-      production: number | null;
-      export: number | null;
-      import: number | null;
-    }>;
+    const solaxRows =
+      forceSolax || measurementRows.length === 0
+        ? (db
+            .prepare(
+              `
+        SELECT
+          strftime(?, timestamp) || 'Z' AS bucket,
+          SUM(pv_output) AS production,
+          SUM(grid_feed_in) AS export,
+          SUM(grid_import) AS import
+        FROM solax_readings
+        WHERE datetime(timestamp) >= datetime(?)
+        GROUP BY bucket
+        ORDER BY bucket ASC
+      `,
+            )
+            .all(bucketFormat, rangeStart) as Array<{
+            bucket: string;
+            production: number | null;
+            export: number | null;
+            import: number | null;
+          }>)
+        : [];
 
-    const history = rows.map((row) => ({
+    const historySource = measurementRows.length ? "db" : "solax";
+    const rowsToUse = measurementRows.length ? measurementRows : solaxRows;
+
+    const history = rowsToUse.map((row) => ({
       datetime: row.bucket,
       production: row.production ?? 0,
       export: row.export ?? 0,
@@ -222,10 +255,21 @@ export function loadDashboardHistoryFromDb(filters: DashboardFilterState) {
       ],
       history,
       refreshedAt: new Date().toISOString(),
-      sourceUsed: "db" as const,
+      sourceUsed: historySource as DashboardSourceUsed,
     };
   } catch (error) {
     console.warn("loadDashboardHistoryFromDb: DB unavailable", error);
     return null;
   }
+}
+
+export type DashboardSourceUsed = "db" | "solax";
+
+export function resolveDashboardSource(
+  sourceParam: DashboardSourceParam | undefined,
+  dbHasData: boolean,
+): DashboardSourceUsed {
+  if (sourceParam === "solax") return "solax";
+  if (sourceParam === "db") return dbHasData ? "db" : "solax";
+  return dbHasData ? "db" : "solax";
 }
